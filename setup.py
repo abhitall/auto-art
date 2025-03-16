@@ -25,7 +25,7 @@ setup(
             "torch>=1.7.0,<3.0.0",
         ],
         "tensorflow": [
-            "tensorflow>=2.4.0,<3.0.0",  # or tensorflow-cpu for CPU-only
+            "tensorflow>=2.4.0,<3.0.0",
         ],
         "tensorflow-cpu": [
             "tensorflow-cpu>=2.4.0,<3.0.0",
@@ -33,6 +33,11 @@ setup(
         "all-frameworks": [
             "torch>=1.7.0,<3.0.0",
             "tensorflow>=2.4.0,<3.0.0",
+        ],
+        # Agentic security extensions (new - for autonomous agent evaluation)
+        "agentic": [
+            "beautifulsoup4>=4.9.0,<5.0.0",
+            "lxml>=4.6.0,<6.0.0",
         ],
         # Development dependencies
         "dev": [
