@@ -72,9 +72,11 @@ class BaseAttackStrategy(AttackStrategy):
 
     @property
     def attack_instance(self) -> Any:
-        """Lazy initialization of attack instance."""
-        if self._attack_instance is None:
-            self._attack_instance = self.attack_class(**self.params)
+        """Returns the last-created attack instance.
+
+        The attack instance is created during execute() with the target
+        classifier. Accessing this before execute() returns None.
+        """
         return self._attack_instance
 
     def execute(
@@ -85,11 +87,11 @@ class BaseAttackStrategy(AttackStrategy):
     ) -> Tuple[np.ndarray, float]:
         """Execute attack and return adversarial examples and success rate."""
         self._attack_instance = self.attack_class(classifier, **self.params)
-        adversarial_examples = self._attack_instance.generate(x=data)
+        adversarial_examples = self._attack_instance.generate(x=x)
         success_rate = compute_success(
             classifier,
-            data,
-            labels,
+            x,
+            y,
             adversarial_examples
         )
         return adversarial_examples, float(success_rate) 

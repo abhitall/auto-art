@@ -139,7 +139,12 @@ class DOMSanitizer(SanitizationLayer):
             if matches:
                 sanitized = re.sub(style_pattern, "", sanitized, flags=re.DOTALL | re.IGNORECASE)
 
-        for pattern, threat_type in self.patterns:
+        patterns_to_check = self.patterns if self.strip_hidden else [
+            (p, t) for p, t in self.patterns
+            if t not in ("hidden_element", "hidden_input_injection", "hidden_image",
+                         "near_invisible_element")
+        ]
+        for pattern, threat_type in patterns_to_check:
             matches = re.findall(pattern, sanitized, re.DOTALL | re.IGNORECASE)
             if matches:
                 threats.append({
@@ -164,12 +169,10 @@ class VisualDenoiser(SanitizationLayer):
         self,
         spatial_smoothing_window: int = 3,
         bit_depth_reduction: int = 4,
-        jpeg_quality: int = 75,
     ):
         super().__init__(layer_name="VisualDenoiser")
         self.spatial_smoothing_window = spatial_smoothing_window
         self.bit_depth_reduction = bit_depth_reduction
-        self.jpeg_quality = jpeg_quality
 
     def sanitize(self, input_data: Any) -> Tuple[Any, List[Dict[str, Any]]]:
         threats: List[Dict[str, Any]] = []

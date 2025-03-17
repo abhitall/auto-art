@@ -42,12 +42,17 @@ class HotFlipWrapper:
             raise TypeError("text_classifier_estimator must be an ART ClassifierMixin suitable for text data.")
 
         self.art_attack_instance = ARTHotFlip( # type: ignore
-            classifier=text_classifier_estimator, # ART HotFlip uses 'classifier'
+            classifier=text_classifier_estimator,
             max_iter=max_iter,
             batch_size=batch_size,
             verbose=verbose,
             **kwargs
         )
+
+    @property
+    def attack(self) -> Any:
+        """ART attack instance, for consistency with other wrappers."""
+        return self.art_attack_instance
 
     def generate(self,
               x_text_token_ids: np.ndarray,

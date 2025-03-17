@@ -31,7 +31,7 @@ class RAGDetectionReport:
     """Aggregate report from RAG poisoning detection."""
     total_documents: int
     anomalous_documents: int
-    filtered_documents: int
+    safe_document_count: int
     anomaly_rate: float
     results: List[RAGRetrievalResult] = field(default_factory=list)
     safe_documents: List[RAGRetrievalResult] = field(default_factory=list)
@@ -197,7 +197,7 @@ class RAGPoisoningDetector:
         return RAGDetectionReport(
             total_documents=total,
             anomalous_documents=anomalous_count,
-            filtered_documents=total - anomalous_count,
+            safe_document_count=total - anomalous_count,
             anomaly_rate=anomalous_count / total if total > 0 else 0.0,
             results=results,
             safe_documents=safe_docs,
