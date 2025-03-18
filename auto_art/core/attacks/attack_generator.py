@@ -30,6 +30,7 @@ from ...core.evaluation.factories.classifier_factory import ClassifierFactory
 from .evasion.auto_attack import AutoAttackWrapper
 from .evasion.carlini_wagner import CarliniWagnerL2Wrapper
 from .evasion.boundary_attack import BoundaryAttackWrapper
+from .evasion.blackbox import SquareAttackWrapper, HopSkipJumpWrapper, SimBAWrapper
 
 # Poisoning attack wrappers
 from .poisoning.backdoor_attack import BackdoorAttackWrapper
@@ -63,13 +64,17 @@ class AttackGenerator:
     def __init__(self):
         """Initializes AttackGenerator and its list of supported attack types per category."""
         self.supported_attacks = {
-            'classification': ['fgsm', 'pgd', 'deepfool', 'autoattack', 'carlini_wagner_l2', 'boundary_attack'],
+            'classification': [
+                'fgsm', 'pgd', 'deepfool', 'autoattack',
+                'carlini_wagner_l2', 'boundary_attack',
+                'square_attack', 'hopskipjump', 'simba',
+            ],
             'poisoning': ['backdoor', 'clean_label', 'feature_collision', 'gradient_matching'],
             'extraction': ['copycat_cnn', 'knockoff_nets', 'functionally_equivalent_extraction'],
             'inference': ['membership_inference_bb', 'attribute_inference_bb', 'model_inversion_miface'],
             'regression': ['fgsm', 'pgd'],
             'generator': ['inversion'], # ART's ModelInversion (targets a classifier usually)
-            'llm': ['textfool', 'hotflip']
+            'llm': ['hotflip']
         }
 
     def _get_art_classifier_for_crafting(
@@ -220,6 +225,27 @@ class AttackGenerator:
                                          step_adapt=config.step_adapt, max_iter=config.max_iter, num_trial=params.get('num_trial', 25),
                                          sample_size=params.get('sample_size', 20), init_size=params.get('init_size', 100),
                                          verbose=params.get('verbose', True)).attack
+        elif attack_type_lower == 'square_attack':
+            return SquareAttackWrapper(
+                estimator=classifier, norm=str(config.norm), eps=config.epsilon,
+                max_iter=config.max_iter, nb_restarts=params.get('nb_restarts', 1),
+                batch_size=config.batch_size, verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'hopskipjump':
+            return HopSkipJumpWrapper(
+                estimator=classifier, targeted=config.targeted,
+                norm=params.get('hopskipjump_norm', '2'),
+                max_iter=config.max_iter, max_eval=params.get('max_eval', 10000),
+                init_eval=params.get('init_eval', 100),
+                init_size=params.get('init_size', 100),
+                batch_size=config.batch_size, verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'simba':
+            return SimBAWrapper(
+                estimator=classifier, attack=params.get('simba_attack_type', 'dct'),
+                max_iter=config.max_iter, epsilon=config.epsilon,
+                batch_size=config.batch_size, verbose=params.get('verbose', True),
+            ).attack
         else:
             raise ValueError(f"Unsupported classification attack type: {config.attack_type}")
 
