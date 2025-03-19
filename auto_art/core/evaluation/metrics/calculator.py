@@ -201,6 +201,31 @@ class MetricsCalculator:
 
         return max(0.0, min(100.0, score))
 
+    def calculate_great_score(
+        self,
+        classifier: Any,
+        data: np.ndarray,
+        labels: np.ndarray,
+        nb_samples: int = 100,
+    ) -> Optional[float]:
+        """Calculate the GREAT Score (ART 1.20+).
+
+        Global Robustness Evaluation of Adversarial Perturbation using
+        Generative Models. Returns None if ART version doesn't support it.
+        """
+        try:
+            from .certification import compute_great_score
+            return compute_great_score(
+                classifier=classifier, x=data, y=labels,
+                nb_samples=nb_samples,
+            )
+        except ImportError:
+            logger.warning("GREAT Score not available in this ART version.")
+            return None
+        except Exception as e:
+            logger.error(f"GREAT Score calculation failed: {e}")
+            return None
+
     def calculate_wasserstein_distance(self,
                                      data_batch_1: np.ndarray,
                                      data_batch_2: np.ndarray) -> Optional[float]:
