@@ -42,7 +42,8 @@ jobs:
                tests/unit/test_inference_attack_wrapper.py \
                tests/unit/test_poisoning_attack_wrapper.py \
                tests/unit/test_llm_attack_wrapper.py \
-               -v --tb=short || echo "Static attack tests completed with issues."
+               -v --tb=short
+      continue-on-error: true
 
     # Phase 2: Agentic Defence Tests (new)
     - name: "Phase 2: Agentic Defence Tests"
@@ -51,6 +52,10 @@ jobs:
                tests/unit/test_rag_poisoning_detector.py \
                tests/unit/test_in_context_defence.py \
                tests/unit/test_circuit_breaker.py \
+               tests/unit/test_preprocessor_defences.py \
+               tests/unit/test_postprocessor_defences.py \
+               tests/unit/test_trainer_defence.py \
+               tests/unit/test_poison_detectors.py \
                -v --tb=short
 
     # Phase 3: Dynamic Agentic Attack Tests (new)
@@ -60,12 +65,13 @@ jobs:
                tests/unit/test_red_team.py \
                tests/unit/test_guardrails.py \
                tests/unit/test_agent_tracer.py \
+               tests/unit/test_blackbox_attacks.py \
+               tests/unit/test_certification.py \
                -v --tb=short
 
     # Phase 4: Full Test Suite
     - name: "Phase 4: Full Test Suite"
-      run: |
-        pytest tests/ -v --tb=short || echo "Full test suite completed with issues."
+      run: pytest tests/ -v --tb=short
 
     # Phase 5: Deployment Gate
     - name: "Phase 5: Deployment Gate - Agentic Resilience Check"

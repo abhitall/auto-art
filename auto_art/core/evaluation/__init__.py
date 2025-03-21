@@ -8,6 +8,8 @@ from .attacks.agentic import (
     AgentPoisonRAGAttack,
     InContextInjectionAttack,
     UniversalAdversarialPatchAttack,
+    AgenticAttackStrategy,
+    AgenticAttackResult,
     run_antigravity_resilience_gate,
 )
 from .red_team import (
@@ -29,6 +31,8 @@ __all__ = [
     'AgentPoisonRAGAttack',
     'InContextInjectionAttack',
     'UniversalAdversarialPatchAttack',
+    'AgenticAttackStrategy',
+    'AgenticAttackResult',
     'run_antigravity_resilience_gate',
     'RedTeamLLM',
     'ContinuousRedTeamPipeline',
@@ -36,4 +40,4 @@ __all__ = [
     'InputRail',
     'ExecutionRail',
     'GuardrailPipeline',
-] 
+]
