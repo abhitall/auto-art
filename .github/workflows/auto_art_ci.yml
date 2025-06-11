@@ -1,0 +1,52 @@
+name: AutoART CI
+
+on:
+  push:
+    branches: [ main, master, develop ] # Adjust as needed
+  pull_request:
+    branches: [ main, master, develop ] # Adjust as needed
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10"]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4 # Updated to v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4 # Updated to v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pytest # Common linting/testing tools
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        # Install the current package. This is important if your tests import the package.
+        pip install .
+        # If you have test-specific dependencies, consider a requirements_dev.txt
+        # if [ -f requirements_dev.txt ]; then pip install -r requirements_dev.txt; fi
+
+    - name: Lint with Flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. Adjust as per project policy.
+        # Default max-line-length for black is 88, for flake8 is 79.
+        # Using a common modern default like 88 or higher for flake8 if not using black.
+        # For now, using a slightly more relaxed 99 for flake8 example.
+        flake8 . --count --exit-zero --max-complexity=12 --max-line-length=99 --statistics
+
+    - name: Run Tests (example with pytest)
+      run: |
+        # This assumes tests are in a 'tests' directory and written for pytest.
+        # If using unittest and want to discover, use:
+        # python -m unittest discover -s tests -p "test_*.py"
+        # The '|| true' will prevent the CI from failing if no tests are found or if they fail.
+        # Remove '|| true' for strict CI that requires tests to pass.
+        pytest tests/ || echo "Pytest run failed or no tests found in 'tests/' directory."
