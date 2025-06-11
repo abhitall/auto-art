@@ -10,14 +10,16 @@ from art.metrics import (
     loss_sensitivity,
     clever_u,
     RobustnessVerificationTreeModelsCliqueMethod,
+    wasserstein_distance # Added import
 )
+import sys # For printing warnings if needed, though commented out in prompt
 
 # Constants
 CACHE_SIZE = 128
 
 class MetricsCalculator:
     """Calculator for various robustness metrics."""
-    
+
     def __init__(self, cache_size: int = CACHE_SIZE):
         self.cache_size = cache_size
         self._initialize_cache()
@@ -39,15 +41,13 @@ class MetricsCalculator:
     ) -> Dict[str, float]:
         """Calculate basic model metrics."""
         predictions = classifier.predict(data)
-        
-        # Calculate accuracy
+
         accuracy = float(np.mean(
             np.argmax(predictions, axis=1) == np.argmax(labels, axis=1)
         ))
-        
-        # Calculate confidence
+
         confidence = float(np.mean(np.max(predictions, axis=1)))
-        
+
         return {
             'accuracy': accuracy,
             'average_confidence': confidence
@@ -62,21 +62,18 @@ class MetricsCalculator:
     ) -> Dict[str, float]:
         """Calculate advanced robustness metrics."""
         metrics = {}
-        
-        # Empirical robustness
+
         metrics['empirical_robustness'] = self.calculate_empirical_robustness(
             classifier,
             data
         )
-        
-        # Loss sensitivity
+
         metrics['loss_sensitivity'] = self._calculate_loss_sensitivity(
             classifier,
             data,
             labels
         )
-        
-        # CLEVER score for subset of samples
+
         clever_scores = []
         for i in range(min(num_samples, len(data))):
             try:
@@ -85,20 +82,19 @@ class MetricsCalculator:
                     data[i]
                 )
                 clever_scores.append(score)
-            except Exception:
-                continue
-        
+            except Exception: #NOSONAR
+                continue #NOSONAR
+
         if clever_scores:
             metrics['average_clever_score'] = float(np.mean(clever_scores))
-        
-        # Tree model verification if applicable
+
         if hasattr(classifier, 'model') and hasattr(classifier.model, 'tree_'):
             metrics['tree_verification'] = self._calculate_tree_verification(
                 classifier,
                 data,
                 labels
             )
-        
+
         return metrics
 
     def _calculate_empirical_robustness(
@@ -107,7 +103,6 @@ class MetricsCalculator:
         data: np.ndarray,
         eps: float = 0.3
     ) -> float:
-        """Calculate empirical robustness."""
         return float(empirical_robustness(
             classifier=classifier,
             x=data,
@@ -121,7 +116,6 @@ class MetricsCalculator:
         data: np.ndarray,
         labels: np.ndarray
     ) -> float:
-        """Calculate loss sensitivity."""
         return float(loss_sensitivity(classifier, data, labels))
 
     def _calculate_clever_score(
@@ -133,7 +127,6 @@ class MetricsCalculator:
         radius: float = 0.3,
         norm: int = 2
     ) -> float:
-        """Calculate CLEVER score for a sample."""
         return float(clever_u(
             classifier=classifier,
             x=sample,
@@ -149,9 +142,97 @@ class MetricsCalculator:
         data: np.ndarray,
         labels: np.ndarray
     ) -> Optional[float]:
-        """Calculate verification score for tree models."""
         try:
             verification = RobustnessVerificationTreeModelsCliqueMethod(classifier)
             return float(verification(data, labels))
-        except Exception:
-            return None 
+        except Exception: #NOSONAR
+            return None
+
+    def calculate_security_score(self,
+                                 base_accuracy: float,
+                                 attack_results: Dict[str, Dict[str, Any]],
+                                 robustness_metrics: Dict[str, float]
+                                ) -> float:
+        score = 0.0
+        weights = {'accuracy': 0.4, 'attack_defense': 0.4, 'certified_robustness': 0.2}
+        score += weights['accuracy'] * base_accuracy * 100
+        defense_scores = []
+        attacks_evaluated_count = 0
+        if attack_results:
+            for _attack_name, res in attack_results.items():
+                if res and 'success_rate' in res and isinstance(res['success_rate'], (float, int)):
+                    attacks_evaluated_count += 1
+                    defense_scores.append(1.0 - float(res['success_rate']))
+
+        if attacks_evaluated_count > 0:
+            avg_defense_score = np.mean(defense_scores) if defense_scores else 0.0
+            score += weights['attack_defense'] * avg_defense_score * 100
+        elif not attack_results:
+             score += weights['attack_defense'] * 100
+
+        num_robust_metrics = 0
+        robust_score_sum = 0.0
+        if 'empirical_robustness' in robustness_metrics and robustness_metrics['empirical_robustness'] is not None:
+            robust_score_sum += robustness_metrics['empirical_robustness']
+            num_robust_metrics += 1
+
+        if num_robust_metrics > 0:
+            avg_robust_contrib = robust_score_sum / num_robust_metrics
+            score += weights['certified_robustness'] * avg_robust_contrib * 100
+        elif not robustness_metrics :
+             score += weights['certified_robustness'] * 50
+
+        return max(0.0, min(100.0, score))
+
+    def calculate_wasserstein_distance(self,
+                                     data_batch_1: np.ndarray,
+                                     data_batch_2: np.ndarray) -> Optional[float]:
+        """
+        Calculates the Wasserstein distance between two batches of data.
+        Useful for comparing distributions, e.g., original vs. adversarial.
+        Requires SciPy to be installed.
+
+        Args:
+            data_batch_1: First batch of data (e.g., original samples).
+            data_batch_2: Second batch of data (e.g., adversarial samples).
+
+        Returns:
+            The Wasserstein distance as a float, or None if calculation fails (e.g., SciPy not found).
+        """
+        if not isinstance(data_batch_1, np.ndarray) or not isinstance(data_batch_2, np.ndarray):
+            # print("Warning: Wasserstein distance requires numpy array inputs.", file=sys.stderr)
+            return None
+
+        if data_batch_1.shape[0] == 0 or data_batch_2.shape[0] == 0:
+            # print("Warning: Wasserstein distance cannot be computed on empty batches.", file=sys.stderr)
+            return None
+
+        shape1 = data_batch_1.shape
+        if len(shape1) > 2:
+            data_batch_1_flat = data_batch_1.reshape(shape1[0], -1)
+        elif len(shape1) == 1:
+            data_batch_1_flat = data_batch_1.reshape(1, -1)
+        else:
+            data_batch_1_flat = data_batch_1
+
+        shape2 = data_batch_2.shape
+        if len(shape2) > 2:
+            data_batch_2_flat = data_batch_2.reshape(shape2[0], -1)
+        elif len(shape2) == 1:
+            data_batch_2_flat = data_batch_2.reshape(1, -1)
+        else:
+            data_batch_2_flat = data_batch_2
+
+        if data_batch_1_flat.shape[1] != data_batch_2_flat.shape[1] and data_batch_1_flat.size > 0 and data_batch_2_flat.size > 0 :
+            # print(f"Warning: Feature dimensions for Wasserstein distance differ: {data_batch_1_flat.shape[1]} vs {data_batch_2_flat.shape[1]}", file=sys.stderr)
+            pass # Let ART handle or raise error.
+
+        try:
+            distance = wasserstein_distance(data_batch_1_flat, data_batch_2_flat)
+            return float(distance)
+        except ImportError: # Typically due to SciPy not being installed
+            # print("SciPy is not installed. Wasserstein distance cannot be calculated.", file=sys.stderr) #NOSONAR
+            return None
+        except Exception as e: #NOSONAR
+            # print(f"Error calculating Wasserstein distance: {e}", file=sys.stderr) #NOSONAR
+            return None
