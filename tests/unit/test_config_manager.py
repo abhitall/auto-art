@@ -9,7 +9,7 @@ from auto_art.config.manager import ConfigManager, FrameworkConfig # Adjust impo
 from dataclasses import asdict # For creating test config dicts
 
 # Test basic singleton and default values
-def test_config_manager_singleton(mocker): # Add mocker fixture
+def test_config_manager_singleton(): # mocker fixture removed as it's not used
     # Reset singleton for test isolation if ConfigManager._instance is accessible
     # This is tricky. For true singleton testing across test functions, state can persist.
     # A common pattern is ConfigManager().reset_config() at start of tests needing defaults.

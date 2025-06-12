@@ -12,6 +12,78 @@ The core of Auto-ART revolves around a sophisticated `ARTEvaluator` capable of p
 
 The framework emphasizes modularity, with clear separation for attack implementations, model handlers, evaluation logic, and configuration.
 
+### Visual Overview
+
+#### High-Level Architecture
+
+The following diagram illustrates the main components of Auto-ART and their interactions:
+
+```mermaid
+graph TD
+    subgraph User Interaction
+        CLI[CLI / SDK User]
+        APIUser[API User]
+    end
+
+    subgraph Configuration
+        EvalConfig[EvaluationConfig]
+        GlobalConfig[Global ConfigManager]
+    end
+
+    subgraph Core Engine
+        Evaluator(ARTEvaluator)
+    end
+
+    subgraph Core Components
+        ModelLoader[Model Loaders (via Factory)]
+        ModelAnalyzer[ModelAnalyzer Utility]
+        DataGen[TestDataGenerator]
+        AttackGen[AttackGenerator]
+        ClassifierFac[ClassifierFactory]
+        MetricsCalc[MetricsCalculator]
+    end
+
+    subgraph ART & Models
+        ARTLib[Adversarial Robustness Toolbox (ART)]
+        VictimModel[User's ML Model (PyTorch, TF, etc.)]
+        AttackImpl[ART Attacks / Auto-ART Wrappers]
+    end
+
+    CLI --> Evaluator
+    APIUser --> APIEndpoint(API /evaluate_model)
+    APIEndpoint --> Evaluator
+
+    Evaluator -- uses --> EvalConfig
+    Evaluator -- uses --> GlobalConfig
+    Evaluator -- uses --> ModelLoader
+    Evaluator -- uses --> ModelAnalyzer
+    Evaluator -- uses --> DataGen
+    Evaluator -- uses --> AttackGen
+    Evaluator -- uses --> ClassifierFac
+    Evaluator -- uses --> MetricsCalc
+
+    ModelLoader --> VictimModel
+    ClassifierFac -- wraps --> VictimModel
+    ClassifierFac --> ARTLibEst(ART Estimator)
+    AttackGen -- creates --> AttackImpl
+    AttackImpl -- uses --> ARTLibEst
+    AttackImpl -- uses --> ARTLib
+
+    Evaluator --> Report([Evaluation Report / Results])
+
+    classDef user fill:#c9d4ff,stroke:#333,stroke-width:2px;
+    classDef core fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef component fill:#bbf,stroke:#333,stroke-width:2px;
+    classDef external fill:#f8c,stroke:#333,stroke-width:2px;
+    classDef data fill:#ffc,stroke:#333,stroke-width:2px;
+
+    class CLI,APIUser user;
+    class Evaluator,APIEndpoint core;
+    class ModelLoader,ModelAnalyzer,DataGen,AttackGen,ClassifierFac,MetricsCalc,EvalConfig,GlobalConfig component;
+    class ARTLib,VictimModel,AttackImpl,ARTLibEst external;
+    class Report data;
+```
+
 ## Features
 
 - **Unified Evaluation Engine**: `ARTEvaluator` consolidates evaluation workflows, offering flexibility for different use cases.
@@ -78,6 +150,48 @@ results_from_path = art_evaluator_from_path.evaluate_robustness_from_path(
 # print(results_from_path)
 ```
 *Note: The above `evaluate_model` usage with specific attack strategies requires defining those strategy objects. The `evaluate_robustness_from_path` method provides a more automated experience.*
+
+#### Simplified Evaluation Workflow (`evaluate_robustness_from_path`)
+
+This sequence diagram shows the typical flow when using `ARTEvaluator.evaluate_robustness_from_path`, for example, via the API:
+
+```mermaid
+sequenceDiagram
+    participant API as /evaluate_model API
+    participant AE as ARTEvaluator
+    participant MF as ModelFactory
+    participant MA as ModelAnalyzer Utility
+    participant TDG as TestDataGenerator
+    participant AG as AttackGenerator
+    participant MC as MetricsCalculator
+
+    API->>+AE: evaluate_robustness_from_path(model_path, framework_str, num_samples)
+    Note over AE: Sets self.model_obj, self.model_metadata
+    AE->>MF: create_model(framework_str)
+    MF-->>AE: model_loader
+    AE->>model_loader: load_model(model_path)
+    model_loader-->>AE: raw_model_obj
+    AE->>MA: analyze_model_architecture(raw_model_obj, framework)
+    MA-->>AE: model_metadata
+
+    AE->>TDG: generate_test_data(model_metadata, num_samples)
+    TDG-->>AE: test_data_obj (with inputs)
+    AE->>TDG: generate_expected_outputs(raw_model_obj, test_data_obj)
+    TDG-->>AE: test_data_obj (with expected_outputs)
+
+    loop For each supported attack_type
+        AE->>AG: create_attack(raw_model_obj, model_metadata, attack_config)
+        AG-->>AE: art_attack_instance
+        AE->>AG: apply_attack(art_attack_instance, test_inputs, test_labels)
+        AG-->>AE: adversarial_examples
+        AE->>AE: _calculate_accuracy_for_robustness (clean)
+        AE->>AE: _calculate_accuracy_for_robustness (adversarial)
+        AE->>AE: _calculate_perturbation_size_for_robustness
+    end
+
+    AE->>AE: _generate_summary_for_robustness()
+    AE-->>-API: EvaluationResults (dict)
+```
 
 ## Project Structure
 
