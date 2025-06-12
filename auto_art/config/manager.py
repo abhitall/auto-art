@@ -1,16 +1,48 @@
 """
-Configuration manager for the framework.
+Configuration manager for the AutoART framework.
+
+This module provides a singleton `ConfigManager` class to load, access,
+and manage framework-wide configurations from a JSON file.
 """
 
 import json
 import os
-from typing import Any, Dict, Optional, List
-from dataclasses import dataclass, asdict
-from pathlib import Path # Ensure Path is imported if used for cache_dir validation
+from typing import Any, Dict, Optional, List, Type, Union
+from dataclasses import dataclass, asdict, fields
+from pathlib import Path
+import logging # Import logging
+
+# Default configuration file name
+DEFAULT_CONFIG_FILENAME = "auto_art_config.json"
+
+# Potential locations for the config file (e.g., user's home, project root)
+# This can be expanded. For now, using current directory as primary.
+DEFAULT_CONFIG_PATHS = [
+    Path(".") / DEFAULT_CONFIG_FILENAME,
+    Path.home() / ".auto_art" / DEFAULT_CONFIG_FILENAME,
+]
 
 @dataclass
 class FrameworkConfig:
-    """Framework-wide configuration settings."""
+    """Dataclass for storing framework-wide configuration settings.
+
+    Attributes:
+        default_batch_size: Default batch size for operations like attack generation.
+        default_num_samples: Default number of samples to use for evaluations if not specified.
+        default_epsilon: Default epsilon value for adversarial attacks (if applicable).
+        default_eps_step: Default epsilon step value for iterative adversarial attacks.
+        default_max_iter: Default maximum iterations for iterative adversarial attacks.
+        output_dir: Default directory for saving outputs (results, logs, etc.).
+        log_level: Logging level for the application (e.g., 'INFO', 'DEBUG').
+        save_results: Boolean indicating whether to save evaluation results to file by default.
+        use_gpu: If True and `default_device` is 'auto', attempts to use GPU if available.
+                 If False, CPU will be used.
+        default_device: Preferred device for computations: "auto", "cpu", or "gpu".
+        num_workers: Default number of workers for parallel processing tasks.
+        timeout: Default timeout in seconds for long-running operations.
+        cache_dir: Optional path to a directory for caching. If None, caching might be disabled
+                   or use a default system temp location.
+    """
     default_batch_size: int = 32
     default_num_samples: int = 100
     default_epsilon: float = 0.3
@@ -19,175 +51,283 @@ class FrameworkConfig:
     output_dir: str = 'output'
     log_level: str = 'INFO'
     save_results: bool = True
-
-    # GPU/Device configuration
-    use_gpu: bool = True # If default_device is 'auto', this hints whether to try GPU.
-    default_device: str = "auto" # Options: "auto", "cpu", "gpu"
-
-    num_workers: int = 4 # For parallel operations like attack evaluation
-    timeout: int = 3600  # Timeout for long operations (e.g., single attack eval)
+    use_gpu: bool = True
+    default_device: str = "auto"
+    num_workers: int = 4
+    timeout: int = 3600
     cache_dir: Optional[str] = None
 
 class ConfigManager:
-    """Singleton configuration manager."""
+    """Singleton configuration manager for AutoART.
+
+    This class handles loading configuration settings from a JSON file,
+    providing access to these settings, and allowing them to be updated or saved.
+    It ensures that only one instance of the configuration exists throughout the application.
+    The configuration is loaded from `auto_art_config.json` by default, searched for in
+    the current directory and then in `~/.auto_art/`. If no file is found,
+    default settings from `FrameworkConfig` are used.
+    """
     
     _instance: Optional['ConfigManager'] = None
-    _config: Optional[FrameworkConfig] = None
+    _config_data: Optional[FrameworkConfig] = None
+    _config_file_path: Optional[Path] = None # Store path of loaded config
+
     _valid_log_levels: List[str] = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
     _valid_devices: List[str] = ['auto', 'cpu', 'gpu']
 
-
-    def __new__(cls):
+    def __new__(cls: Type['ConfigManager']) -> 'ConfigManager':
+        """Ensures only one instance of ConfigManager is created (Singleton pattern)."""
         if cls._instance is None:
             cls._instance = super(ConfigManager, cls).__new__(cls)
+            # Initialize config when instance is first created
+            cls._config_data = FrameworkConfig() # Start with defaults
+            cls.load_config() # Attempt to load from default paths
         return cls._instance
     
     def __init__(self):
-        if self._config is None: # Ensure init is only run once effectively
-            self._config = FrameworkConfig()
-    
+        """Initializes the ConfigManager.
+
+        Note: Actual initialization of config data happens in `__new__` to ensure
+        it's done only once for the singleton instance, typically by calling `load_config`.
+        This `__init__` is called every time `ConfigManager()` is invoked but the
+        core logic relies on the class-level `_config_data`.
+        """
+        pass # Initialization logic is in __new__ to ensure it runs once.
+
+    @classmethod
+    def load_config(cls: Type['ConfigManager'], file_path: Optional[Union[str, Path]] = None) -> None:
+        """Loads configuration from a JSON file.
+
+        If `file_path` is provided, it attempts to load from that path.
+        If `file_path` is None, it searches for `auto_art_config.json` in default locations
+        (current directory, then `~/.auto_art/`). If no file is found,
+        default settings are maintained. If called multiple times, it reloads and
+        overwrites the existing configuration.
+
+        Args:
+            file_path: Optional path to the configuration file.
+
+        Raises:
+            FileNotFoundError: If a specified `file_path` is not found.
+            ValueError: If the configuration file contains invalid JSON or data
+                        that fails validation.
+            RuntimeError: For other unexpected errors during loading.
+        """
+        path_to_load: Optional[Path] = None
+        if file_path:
+            path_to_load = Path(file_path)
+            if not path_to_load.exists():
+                raise FileNotFoundError(f"Specified config file not found: {path_to_load}")
+        else:
+            for p in DEFAULT_CONFIG_PATHS:
+                if p.exists():
+                    path_to_load = p
+                    break
+
+        current_config = FrameworkConfig() # Start with defaults to load into
+
+        if path_to_load:
+            cls._config_file_path = path_to_load # Store path if successfully loaded
+            try:
+                with open(path_to_load, 'r') as f:
+                    config_dict = json.load(f)
+
+                loaded_keys = set()
+                for field_info in fields(FrameworkConfig):
+                    if field_info.name in config_dict:
+                        setattr(current_config, field_info.name, config_dict[field_info.name])
+                        loaded_keys.add(field_info.name)
+
+                # Optionally warn about unknown keys
+                unknown_keys = set(config_dict.keys()) - loaded_keys
+                if unknown_keys:
+                    logger = logging.getLogger(__name__) # Get logger instance
+                    logger.warning(f"Unknown keys in config file '{path_to_load}' ignored: {', '.join(unknown_keys)}")
+
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in config file '{path_to_load}': {str(e)}")
+            except Exception as e:
+                raise RuntimeError(f"Failed to load config from '{path_to_load}': {str(e)}")
+
+        # Always validate, even if it's just defaults or partially loaded
+        try:
+            cls.validate_config_static(current_config) # Use static method for validation
+            cls._config_data = current_config
+        except ValueError as e:
+            # If validation fails, reset to ensure a valid default state if this was not the first load
+            cls._config_data = FrameworkConfig()
+            cls._config_file_path = None # Reset path if load failed validation
+            raise ValueError(f"Invalid configuration data (from file or defaults): {e}")
+
+
     @property
     def config(self) -> FrameworkConfig:
-        """Get the current configuration."""
-        if self._config is None: # Should not happen if __init__ ran
-            self._config = FrameworkConfig()
-        return self._config
-    
-    def load_config(self, config_path: str) -> None:
-        """Load configuration from file."""
-        if not os.path.exists(config_path):
-            raise FileNotFoundError(f"Config file not found: {config_path}")
+        """Provides access to the current FrameworkConfig object.
         
-        try:
-            with open(config_path, 'r') as f:
-                config_dict = json.load(f)
-            
-            # Create a new config instance to load into, then validate
-            new_config_instance = FrameworkConfig() # Start with defaults
-            for key, value in config_dict.items():
-                if hasattr(new_config_instance, key):
-                    setattr(new_config_instance, key, value)
-                # else: # Optionally warn about unknown keys in file
-                    # print(f"Warning: Unknown key '{key}' in config file ignored.", file=sys.stderr)
+        Returns:
+            The active FrameworkConfig instance.
+        """
+        if ConfigManager._config_data is None: # Should be initialized by __new__
+            ConfigManager.load_config() # Try to load defaults if somehow missed
+        return ConfigManager._config_data # type: ignore
 
-            if not self.validate_config(new_config_instance):
-                # This path should ideally not be reached if validate_config raises on error
-                raise ValueError("Invalid configuration loaded from file (post-validation check).")
-            self._config = new_config_instance # Assign validated config
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in config file: {str(e)}")
-        except ValueError as e: # Catch validation errors
-            raise ValueError(f"Invalid configuration in file '{config_path}': {e}")
-        except Exception as e:
-            raise RuntimeError(f"Failed to load config from '{config_path}': {str(e)}")
-    
-    def save_config(self, config_path: str) -> None:
-        """Save current configuration to file."""
+    def save_config(self, file_path: Optional[Union[str, Path]] = None) -> None:
+        """Saves the current configuration to a JSON file.
+
+        If `file_path` is provided, saves to that path. Otherwise, saves to the
+        path from which the configuration was last loaded, or to the default
+        config path in the current directory if never loaded from a specific file.
+
+        Args:
+            file_path: Optional path to save the configuration file.
+
+        Raises:
+            RuntimeError: If saving fails.
+            ValueError: If no path is specified and no default path can be determined.
+        """
+        path_to_save: Optional[Path] = None
+        if file_path:
+            path_to_save = Path(file_path)
+        elif ConfigManager._config_file_path:
+            path_to_save = ConfigManager._config_file_path
+        else:
+            path_to_save = DEFAULT_CONFIG_PATHS[0] # Default to current directory
+
+        if path_to_save is None: # Should not happen with current logic
+            raise ValueError("No file path specified for saving configuration and no default path available.")
+
         try:
-            output_dir_path = os.path.dirname(config_path)
-            if output_dir_path and not os.path.exists(output_dir_path):
-                os.makedirs(output_dir_path, exist_ok=True)
+            output_dir_path = path_to_save.parent
+            if not output_dir_path.exists():
+                output_dir_path.mkdir(parents=True, exist_ok=True)
 
             config_dict = asdict(self.config)
-            with open(config_path, 'w') as f:
+            with open(path_to_save, 'w') as f:
                 json.dump(config_dict, f, indent=4)
+            ConfigManager._config_file_path = path_to_save # Update loaded path
         except Exception as e:
-            raise RuntimeError(f"Failed to save config to '{config_path}': {str(e)}")
+            raise RuntimeError(f"Failed to save config to '{path_to_save}': {str(e)}")
     
     def update_config(self, **kwargs: Any) -> None:
-        """Update configuration with new values."""
-        current_config_dict = asdict(self.config)
-        new_config_instance = FrameworkConfig(**current_config_dict) # Create a copy to modify
+        """Updates the current configuration with new values.
 
-        invalid_keys = []
+        Changes are validated before being applied. If validation fails,
+        the configuration remains unchanged and a ValueError is raised.
+
+        Args:
+            **kwargs: Key-value pairs for configuration settings to update.
+
+        Raises:
+            ValueError: If unknown configuration keys are provided or if
+                        the new values fail validation.
+        """
+        current_config_dict = asdict(self.config)
+        temp_config_instance = FrameworkConfig(**current_config_dict) # Create a copy
+
+        unknown_keys = []
         for key, value in kwargs.items():
-            if hasattr(new_config_instance, key):
-                setattr(new_config_instance, key, value)
+            if hasattr(temp_config_instance, key):
+                setattr(temp_config_instance, key, value)
             else:
-                invalid_keys.append(key)
+                unknown_keys.append(key)
         
-        if invalid_keys:
-            raise ValueError(f"Unknown configuration keys: {', '.join(invalid_keys)}")
+        if unknown_keys:
+            raise ValueError(f"Unknown configuration keys provided for update: {', '.join(unknown_keys)}")
         
-        if not self.validate_config(new_config_instance): # Validate the modified copy
-             # This path should ideally not be reached if validate_config raises on error
-            raise ValueError("Invalid configuration after update (post-validation check).")
-        self._config = new_config_instance # Assign validated config
+        ConfigManager.validate_config_static(temp_config_instance) # Validate the modified copy
+        ConfigManager._config_data = temp_config_instance # Assign validated config
     
     def reset_config(self) -> None:
-        """Reset configuration to default values."""
-        self._config = FrameworkConfig()
+        """Resets the configuration to default FrameworkConfig values."""
+        ConfigManager._config_data = FrameworkConfig()
+        ConfigManager._config_file_path = None # Reset as it's default, not from a file
     
-    def get_value(self, key: str, default: Any = None) -> Any:
-        """Get a configuration value."""
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        """Retrieves a configuration setting by its key.
+
+        Args:
+            key: The name of the configuration setting.
+            default: The value to return if the key is not found.
+
+        Returns:
+            The value of the configuration setting, or the default if not found.
+        """
         return getattr(self.config, key, default)
     
-    def set_value(self, key: str, value: Any) -> None:
-        """Set a configuration value."""
-        if not hasattr(self.config, key): # Check on current config instance
+    def set_setting(self, key: str, value: Any) -> None:
+        """Sets a single configuration value after validation.
+
+        If the new value fails validation, the configuration is not changed,
+        and a ValueError is raised by the validation method.
+
+        Args:
+            key: The name of the configuration setting to set.
+            value: The new value for the setting.
+
+        Raises:
+            ValueError: If the key is unknown or the value fails validation.
+        """
+        if not hasattr(self.config, key):
             raise ValueError(f"Unknown configuration key: {key}")
         
-        # Create a temporary instance to validate the change
         current_config_dict = asdict(self.config)
         temp_config_instance = FrameworkConfig(**current_config_dict)
-        setattr(temp_config_instance, key, value) # Apply change to temp instance
+        setattr(temp_config_instance, key, value)
 
-        if not self.validate_config(temp_config_instance): # Validate the temp instance
-            # Error is raised by validate_config, so no need to raise again here
-            # The original self._config remains unchanged
-            return
+        ConfigManager.validate_config_static(temp_config_instance) # This will raise ValueError on failure
         
         # If validation passes, apply to the actual config
-        setattr(self._config, key, value)
+        setattr(ConfigManager._config_data, key, value)
     
-    def validate_config(self, config_to_validate: FrameworkConfig) -> bool:
-        """Validate current configuration. Raises ValueError on failure."""
+    @staticmethod
+    def validate_config_static(config_to_validate: FrameworkConfig) -> None:
+        """Validates a FrameworkConfig object. Raises ValueError on failure.
+
+        Args:
+            config_to_validate: The FrameworkConfig instance to validate.
+
+        Raises:
+            ValueError: If any configuration setting is invalid.
+        """
         cfg = config_to_validate
-        try:
-            if not (isinstance(cfg.default_batch_size, int) and cfg.default_batch_size > 0):
-                raise ValueError("default_batch_size must be a positive integer")
-            if not (isinstance(cfg.default_num_samples, int) and cfg.default_num_samples > 0):
-                raise ValueError("default_num_samples must be a positive integer")
-            if not (isinstance(cfg.default_epsilon, float) and 0 < cfg.default_epsilon <= 1.0):
-                raise ValueError("default_epsilon must be a float between 0 (exclusive) and 1 (inclusive)")
-            if not (isinstance(cfg.default_eps_step, float) and 0 < cfg.default_eps_step <= 1.0):
-                raise ValueError("default_eps_step must be a float between 0 (exclusive) and 1 (inclusive)")
-            if not (isinstance(cfg.default_max_iter, int) and cfg.default_max_iter > 0):
-                raise ValueError("default_max_iter must be a positive integer")
-            if not (isinstance(cfg.num_workers, int) and cfg.num_workers >= 0):
-                raise ValueError("num_workers must be a non-negative integer")
-            if not (isinstance(cfg.timeout, int) and cfg.timeout > 0):
-                raise ValueError("timeout must be a positive integer")
-            
-            if not isinstance(cfg.log_level, str) or cfg.log_level.upper() not in self._valid_log_levels:
-                raise ValueError(f"log_level must be one of {self._valid_log_levels}")
-            
-            if not isinstance(cfg.default_device, str) or cfg.default_device.lower() not in self._valid_devices:
-                raise ValueError(f"default_device must be one of {self._valid_devices}")
+        # Type checks are largely handled by dataclass, focus on value constraints
+        if not (isinstance(cfg.default_batch_size, int) and cfg.default_batch_size > 0):
+            raise ValueError("default_batch_size must be a positive integer")
+        if not (isinstance(cfg.default_num_samples, int) and cfg.default_num_samples > 0):
+            raise ValueError("default_num_samples must be a positive integer")
+        if not (isinstance(cfg.default_epsilon, float) and 0 < cfg.default_epsilon <= 1.0):
+            raise ValueError("default_epsilon must be a float between 0 (exclusive) and 1 (inclusive)")
+        if not (isinstance(cfg.default_eps_step, float) and 0 < cfg.default_eps_step <= 1.0):
+            raise ValueError("default_eps_step must be a float between 0 (exclusive) and 1 (inclusive)")
+        if not (isinstance(cfg.default_max_iter, int) and cfg.default_max_iter > 0):
+            raise ValueError("default_max_iter must be a positive integer")
+        if not (isinstance(cfg.num_workers, int) and cfg.num_workers >= 0):
+            raise ValueError("num_workers must be a non-negative integer")
+        if not (isinstance(cfg.timeout, int) and cfg.timeout > 0): # Changed to int as per FrameworkConfig
+            raise ValueError("timeout must be a positive integer")
 
-            if cfg.cache_dir is not None and not isinstance(cfg.cache_dir, str):
-                 raise ValueError("cache_dir must be a string or None")
-            
-            if not isinstance(cfg.use_gpu, bool):
-                raise ValueError("use_gpu must be a boolean")
-            if not isinstance(cfg.save_results, bool):
-                raise ValueError("save_results must be a boolean")
-            if not isinstance(cfg.output_dir, str): # Assuming output_dir is always a string
-                raise ValueError("output_dir must be a string")
+        if not isinstance(cfg.log_level, str) or cfg.log_level.upper() not in ConfigManager._valid_log_levels:
+            raise ValueError(f"log_level must be one of {ConfigManager._valid_log_levels}")
 
-            return True
-        except ValueError: # Re-raise specific ValueErrors from checks
-            raise
-        except Exception as e:
-            raise ValueError(f"Unexpected validation error: {e}")
+        if not isinstance(cfg.default_device, str) or cfg.default_device.lower() not in ConfigManager._valid_devices:
+            raise ValueError(f"default_device must be one of {ConfigManager._valid_devices}")
 
-```
-I've refined the `load_config`, `update_config`, and `set_value` methods to better handle validation. They now attempt to validate a temporary copy of the configuration before applying changes to the main `self._config`. `validate_config` is also designed to raise `ValueError` directly on failure, simplifying the calling code. `Path` from `pathlib` was added to imports, though its direct use in `validate_config` for `cache_dir` checks was commented out in the prompt.The temporary file `auto_art/config/manager_py_device_config.py` has been created with the new comprehensive content for `ConfigManager` and `FrameworkConfig`.
+        if cfg.cache_dir is not None:
+            if not isinstance(cfg.cache_dir, str):
+                raise ValueError("cache_dir must be a string path or None")
+            # Optionally, try to create Path(cfg.cache_dir) to validate path format
+            try:
+                Path(cfg.cache_dir)
+            except Exception as e:
+                raise ValueError(f"cache_dir path format is invalid: {e}")
 
-Key changes included:
-- `FrameworkConfig` now has `default_device`.
-- `ConfigManager` has `_valid_devices`.
-- `validate_config` now takes the config object as an argument and includes more thorough type and value checks, raising `ValueError` on failure.
-- `load_config`, `update_config`, and `set_value` have been refined to validate changes on a temporary copy before applying them to the active configuration object, ensuring atomicity of valid changes.
+        if not isinstance(cfg.use_gpu, bool):
+            raise ValueError("use_gpu must be a boolean")
+        if not isinstance(cfg.save_results, bool):
+            raise ValueError("save_results must be a boolean")
+        if not isinstance(cfg.output_dir, str):
+            raise ValueError("output_dir must be a string")
 
-The next step is to move this temporary file to the correct location, overwriting the original `auto_art/config/manager.py`.
+    # For direct access if needed, though property is preferred.
+    # def get_config_object(self) -> FrameworkConfig:
+    #     return self.config

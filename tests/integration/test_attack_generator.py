@@ -7,142 +7,143 @@ from art.estimators.classification import PyTorchClassifier
 from art.attacks.evasion import FastGradientMethod as ArtFastGradientMethod
 
 from auto_art.core.attacks.attack_generator import AttackGenerator
-# We need a concrete AttackWrapper from auto_art to test the full integration.
-# Let's use FastGradientMethodWrapper as it's a common one and likely exists.
-from auto_art.core.attacks.evasion.fast_gradient_method import FastGradientMethodWrapper
-from auto_art.core.interfaces import ModelType # For creating a handler if needed by AttackGenerator
+from auto_art.core.interfaces import AttackConfig
+from auto_art.core.base import ModelMetadata # For creating metadata
 
 # --- PyTorch Model for Estimator ---
-class SimpleTorchModelForEstimator(nn.Module):
+class SimpleTorchModel(nn.Module): # Renamed for clarity
     def __init__(self, input_features=20, num_classes=5):
         super().__init__()
         self.linear = nn.Linear(input_features, num_classes)
 
     def forward(self, x):
-        return self.linear(x)
+        return self.linear(x) # Raw logits
 
 @pytest.fixture
-def art_pytorch_classifier():
-    model = SimpleTorchModelForEstimator(input_features=20, num_classes=5)
-    # Define a loss function and optimizer for the ART classifier
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+def raw_pytorch_model(): # Fixture for the raw model
+    return SimpleTorchModel(input_features=20, num_classes=5)
 
-    classifier = PyTorchClassifier(
-        model=model,
-        loss=criterion,
-        optimizer=optimizer,
-        input_shape=(20,), # Example: 20 input features
-        nb_classes=5,
-        clip_values=(0, 1) # Assuming data is normalized [0,1]
+@pytest.fixture
+def model_metadata_for_simple_torch(): # Fixture for metadata
+    return ModelMetadata(
+        model_type='classification',
+        framework='pytorch',
+        input_shape=(20,), # No batch dimension
+        output_shape=(5,),
+        input_type='tabular',
+        output_type='logits',
+        layer_info=[] # Simplified for this test
     )
-    return classifier
 
 @pytest.fixture
-def attack_generator(art_pytorch_classifier):
-    # AttackGenerator might take an ART estimator directly, or a ModelHandler.
-    # Based on the PRD, it seems to work with ART estimators.
-    return AttackGenerator(estimator=art_pytorch_classifier)
+def attack_generator(): # Corrected instantiation
+    return AttackGenerator()
 
-# Test data for attack generation
 @pytest.fixture
 def sample_test_data():
-    x_test = np.random.rand(10, 20).astype(np.float32) # 10 samples, 20 features
-    y_test = np.random.randint(0, 5, 10) # 10 labels for 5 classes
-    return x_test, y_test
+    x_test = np.random.rand(10, 20).astype(np.float32)
+    y_test_indices = np.random.randint(0, 5, 10)
+    # For ART attacks, y is often class indices for classification
+    return x_test, y_test_indices
 
-# Test creating and using an evasion attack (FastGradientMethod)
-def test_attack_generator_with_fgsm(attack_generator, art_pytorch_classifier, sample_test_data):
+def test_attack_generator_with_fgsm(
+    attack_generator: AttackGenerator,
+    raw_pytorch_model: SimpleTorchModel,
+    model_metadata_for_simple_torch: ModelMetadata,
+    sample_test_data
+):
     x_test, y_test = sample_test_data
 
-    attack_name = "fast_gradient_method" # Needs to match how FGSM is registered or identified
-
-    # Parameters for FastGradientMethodWrapper
-    attack_params = {
-        "eps": 0.1,
-        "eps_step": 0.02, # Ensure this is valid for ART's FGSM if passed directly
-        "batch_size": 5,
-        "minimal": False, # ART default
-        "summary_writer": False # ART default
-    }
-
-    # Before creating the attack, we need to ensure AttackGenerator knows about this wrapper.
-    # This might happen via a registration mechanism or by specifying module/class paths.
-    # For this test, let's assume a direct registration or that it's auto-discovered.
-    # If AttackGenerator has a `register_attack_wrapper` method:
-    if hasattr(attack_generator, 'register_attack_wrapper'):
-        attack_generator.register_attack_wrapper(attack_name, FastGradientMethodWrapper)
+    # Create AttackConfig for FGSM
+    fgsm_attack_config = AttackConfig(
+        attack_type="fgsm", # Ensure this matches a key in AttackGenerator.supported_attacks
+        epsilon=0.1,
+        batch_size=5,
+        additional_params={ # ART FGSM specific params not in base AttackConfig
+            "eps_step": 0.02, # FGSM doesn't use eps_step, but PGD does. ART FGSM ignores it.
+            "minimal": False,
+            "summary_writer": False
+        }
+    )
 
     # Create the attack using AttackGenerator
-    # The create_attack method signature might vary.
-    # Option 1: attack_generator.create_attack(attack_name, **attack_params)
-    # Option 2: attack_generator.create_attack(attack_name, attack_params_dict)
-    # Option 3: It takes a config object.
+    # AttackGenerator's _create_classification_attack will create an ART estimator internally
+    attack_instance = attack_generator.create_attack(
+        model=raw_pytorch_model,
+        metadata=model_metadata_for_simple_torch,
+        config=fgsm_attack_config
+    )
 
-    # Let's assume it takes name and a dictionary of parameters for the wrapper.
-    # This implies AttackGenerator knows which wrapper corresponds to `attack_name`.
-    try:
-        attack_instance_wrapper = attack_generator.create_attack(attack_name, params=attack_params)
-    except Exception as e:
-        # Fallback if the above fails, perhaps due to how attacks are structured.
-        # This might indicate a need to adjust AttackGenerator or how attacks are registered/called.
-        # For now, let's assume a direct instantiation for testing the flow if create_attack is problematic.
-        # This part of the test might need adjustment based on AttackGenerator's final design.
-        # A common pattern is for AttackGenerator to look up a class from a name and instantiate it.
-        # If that's the case, the test should rely on that lookup.
-        pytest.skip(f"AttackGenerator.create_attack for '{attack_name}' failed or not implemented as expected: {e}. "
-                    "This test needs to align with AttackGenerator's attack creation mechanism.")
-        # As a bypass for now, to test the rest of the flow:
-        # attack_instance_wrapper = FastGradientMethodWrapper(estimator=art_pytorch_classifier, attack_params=attack_params)
+    assert isinstance(attack_instance, ArtFastGradientMethod)
+    assert attack_instance.eps == fgsm_attack_config.epsilon
+    assert attack_instance.batch_size == fgsm_attack_config.batch_size
+    # The estimator is created inside AttackGenerator, so we can't directly compare with an external one here.
+    # We can check its type if needed, but that's testing ClassifierFactory through AttackGenerator.
+    assert isinstance(attack_instance.estimator, PyTorchClassifier)
+    assert attack_instance.estimator.input_shape == model_metadata_for_simple_torch.input_shape
+    assert attack_instance.estimator.nb_classes == model_metadata_for_simple_torch.output_shape[0]
 
 
-    assert isinstance(attack_instance_wrapper, FastGradientMethodWrapper)
-    assert isinstance(attack_instance_wrapper.attack, ArtFastGradientMethod) # Check it holds an ART attack
-    assert attack_instance_wrapper.attack.estimator == art_pytorch_classifier
-    assert attack_instance_wrapper.attack.eps == attack_params["eps"]
-
-    # Generate adversarial examples using the wrapper obtained from AttackGenerator
-    x_adv = attack_instance_wrapper.generate(x=x_test, y=y_test)
+    # Generate adversarial examples using the ART attack instance
+    # Note: The 'y' for ART's generate can be true labels for untargeted attacks
+    # to ensure misclassification, or target labels for targeted attacks.
+    x_adv = attack_instance.generate(x=x_test, y=y_test)
 
     assert x_adv is not None
     assert x_adv.shape == x_test.shape
-    # Check if values changed (basic check for attack effect)
-    assert not np.array_equal(x_adv, x_test)
-    # Check if values are within clip_values of the estimator (if applicable for FGSM)
-    min_val, max_val = art_pytorch_classifier.clip_values
-    assert np.all(x_adv >= min_val - 1e-6) # Allow for small floating point errors
-    assert np.all(x_adv <= max_val + 1e-6)
+    assert not np.allclose(x_adv, x_test) # Check values changed
+
+    # Check if values are within clip_values (default is (0,1) for PyTorchClassifier if not specified)
+    # The internal PyTorchClassifier in AttackGenerator is created with default clip_values (0,1)
+    # if not otherwise specified via additional_params for ClassifierFactory.
+    # For this test, we assume default clip_values.
+    assert np.all(x_adv >= 0.0 - 1e-6)
+    assert np.all(x_adv <= 1.0 + 1e-6)
 
 
-# Test for an unknown or unsupported attack type
-def test_attack_generator_unknown_attack(attack_generator):
-    with pytest.raises(ValueError): # Or NotImplementedError, depending on AttackGenerator
-        attack_generator.create_attack("non_existent_super_attack", params={"some_param": 1})
+def test_attack_generator_unknown_attack(attack_generator, raw_pytorch_model, model_metadata_for_simple_torch):
+    unknown_attack_config = AttackConfig(attack_type="non_existent_super_attack")
 
-# Test for attack requiring specific estimator features not present
-# (This is more complex and depends on specific attacks and how AttackGenerator validates)
-# For example, an attack that only works on models with gradients, but estimator doesn't provide them.
+    with pytest.raises(ValueError, match="Unsupported attack type: non_existent_super_attack or category not determined."):
+        attack_generator.create_attack(
+            model=raw_pytorch_model,
+            metadata=model_metadata_for_simple_torch,
+            config=unknown_attack_config
+        )
+
 def test_attack_generator_estimator_mismatch():
-    # This would require setting up an estimator and an attack that are incompatible.
-    # For example, a gradient-based attack with an estimator that doesn't expose gradients.
-    # For now, this is a placeholder as it depends heavily on specific attack implementations.
-    pass
+    """Test for scenarios where estimator features might mismatch attack requirements."""
+    pytest.skip("Skipping estimator mismatch test: complex to set up generically.")
 
-# Add more tests for other types of attacks (poisoning, extraction, inference)
-# as their wrappers and integration with AttackGenerator become clear.
-# Each will require:
-# 1. An appropriate ART estimator.
-# 2. A concrete AutoART attack wrapper for that attack type.
-# 3. Attack parameters relevant to that specific attack.
-# 4. Assertions on the generated attack's properties and its output.
-
-# Example structure for a different attack type (e.g., a hypothetical poisoning attack)
-# @pytest.fixture
-# def art_poisoning_compatible_classifier(): ...
-# def test_attack_generator_with_poisoning_attack(attack_generator_for_poisoning, ...):
-#     attack_name = "some_poisoning_attack"
-#     attack_params = {...}
-#     attack_generator_for_poisoning.register_attack_wrapper(attack_name, SomePoisoningWrapper)
-#     wrapper = attack_generator_for_poisoning.create_attack(attack_name, params=attack_params)
-#     assert isinstance(wrapper, SomePoisoningWrapper)
-#     # ... test generate for poisoning ...
+# TODO: Add integration tests for other attack categories (poisoning, extraction, inference, llm)
+#       showing how AttackGenerator creates their respective wrappers or ART attacks.
+#       This will involve mocking the execution methods of those wrappers/attacks.
+#
+# Example structure for a wrapper-based attack (e.g., a hypothetical 'CustomWrapperAttack'):
+# @patch('auto_art.core.attacks.some_module.ActualWrapperClass') # Patch the actual wrapper
+# def test_attack_generator_with_custom_wrapper_attack(
+#     MockActualWrapper, attack_generator, art_estimator_for_wrapper, model_metadata_for_wrapper
+# ):
+#     mock_wrapper_instance = MockActualWrapper.return_value # This is what create_attack should return
+#
+#     attack_config = AttackConfig(
+#         attack_type="custom_wrapper_attack_name", # Registered in AttackGenerator
+#         additional_params={"wrapper_param_1": True}
+#     )
+#     # Assume 'art_estimator_for_wrapper' and 'model_metadata_for_wrapper' are appropriate fixtures
+#     created_instance = attack_generator.create_attack(
+#         model=art_estimator_for_wrapper, # Or raw model depending on wrapper type
+#         metadata=model_metadata_for_wrapper,
+#         config=attack_config
+#     )
+#     MockActualWrapper.assert_called_once_with(
+#         estimator=art_estimator_for_wrapper, # Or other model param
+#         wrapper_param_1=True
+#     )
+#     assert created_instance is mock_wrapper_instance
+#
+#     # If this wrapper has its own 'execute' or 'generate' method:
+#     # mock_wrapper_instance.execute.return_value = ...
+#     # result = created_instance.execute(...)
+#     # mock_wrapper_instance.execute.assert_called_once()
+#     # assert result == ...

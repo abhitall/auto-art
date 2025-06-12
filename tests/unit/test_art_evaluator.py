@@ -1,202 +1,208 @@
 import pytest
 from unittest.mock import MagicMock, patch
 import numpy as np
+import torch # For dummy model
 
-from auto_art.core.evaluation.art_evaluator import ARTEvaluator
-from auto_art.core.interfaces import ModelMetadata # Assuming this is used
-from auto_art.core.testing.data_generator import TestData # For type hinting
+from auto_art.core.evaluation.art_evaluator import ARTEvaluator, EvasionAttackStrategy, EvaluationMetrics
+from auto_art.core.evaluation.config.evaluation_config import EvaluationConfig, ModelType, Framework, EvaluationResult
+from auto_art.core.base import ModelMetadata
+from auto_art.core.testing.data_generator import TestData
 
-# Mock objects for ARTEvaluator dependencies
-@pytest.fixture
-def mock_model_handler():
-    handler = MagicMock()
-    handler.get_model_type.return_value = "PYTORCH" # Example
-    handler.get_framework.return_value = "pytorch"
-    # Mock the underlying model object if ARTEvaluator interacts with it directly
-    handler.model = MagicMock()
-    # Mock predict method on the handler
-    handler.predict.return_value = np.array([[0.1, 0.9], [0.8, 0.2]]) # Example predictions
-    return handler
+# Minimal PyTorch model for testing
+class DummyTorchModel(torch.nn.Module):
+    def __init__(self, in_features=10, num_classes=2):
+        super().__init__()
+        self.linear = torch.nn.Linear(in_features, num_classes)
+    def forward(self, x):
+        return torch.softmax(self.linear(x), dim=1)
 
 @pytest.fixture
-def mock_attack_wrapper():
-    attack = MagicMock()
-    # Simulate attack.generate() returning adversarial examples
-    # These should be plausible given the mock_test_data's shape
-    attack.generate.return_value = np.random.rand(2, 28*28).astype(np.float32) # Batch of 2, 784 features
-    attack.attack_params = {"eps": 0.1} # Example attack parameters
-    attack.attack_name = "MockAttack" # Example attack name
-    return attack
+def mock_model_obj():
+    return DummyTorchModel(in_features=784, num_classes=2)
 
 @pytest.fixture
-def mock_art_estimator(): # This is the ART estimator that the attack wrapper would use
+def mock_evaluation_config():
+    return EvaluationConfig(
+        model_type=ModelType.CLASSIFICATION,
+        framework=Framework.PYTORCH,
+        input_shape=(784,), # Example: flattened 28x28 images, no batch
+        nb_classes=2,
+        attack_params={"epsilon": 0.03} # For evaluate_robustness_from_path tests
+    )
+
+@pytest.fixture
+def mock_art_estimator():
     estimator = MagicMock()
-    # ART estimators have predict, fit, etc.
-    # ARTEvaluator might primarily interact with the ModelHandler for predictions,
-    # but the attack generation relies on an ART estimator.
-    # The ARTEvaluator's evaluate_attack method needs an ART estimator.
-    estimator.predict.return_value = np.array([[0.2, 0.8], [0.7, 0.3]]) # Predictions on adversarial data
+    estimator.predict.return_value = np.array([[0.2, 0.8], [0.7, 0.3]]) # Example predictions
+    estimator.input_shape = (784,)
+    estimator.nb_classes = 2
     return estimator
 
 @pytest.fixture
-def mock_test_data():
-    # 2 samples, 784 features (e.g., flattened 28x28 images)
-    inputs = np.random.rand(2, 28*28).astype(np.float32)
-    # True labels for these 2 samples, e.g., one-hot encoded for 2 classes
-    # Or class indices, depending on what ARTEvaluator/metrics expect
-    expected_outputs = np.array([[0, 1], [1, 0]]).astype(np.int32) # One-hot
-    # expected_outputs = np.array([1, 0]).astype(np.int32) # Class indices
-    return TestData(inputs=inputs, expected_outputs=expected_outputs)
+def mock_test_data_np():
+    inputs = np.random.rand(2, 784).astype(np.float32)
+    labels = np.array([1, 0]).astype(np.int64) # Class indices
+    return inputs, labels
 
 @pytest.fixture
-def mock_metrics_calculator():
-    # MetricsCalculator calculates various metrics based on true and predicted labels
-    calc = MagicMock()
-    # Example: calculate_accuracy returns a float
-    calc.calculate_accuracy.return_value = 0.5
-    # Example: calculate_attack_success_rate might also return a float or dict
-    calc.calculate_attack_success_rate.return_value = 0.8
-    # Add other metrics as needed by ARTEvaluator's reports
-    calc.calculate_robustness_metrics.return_value = {"some_robustness_score": 0.6}
-    # ARTEvaluator expects calculate_all_metrics or individual metric methods
-    # Let's assume it calls individual ones for this test or a general one.
-    # If it calls a general one:
-    calc.compute_all_metrics.return_value = {
-        "accuracy_benign": 0.9,
-        "accuracy_adversarial": 0.5,
-        "attack_success_rate": 0.8,
-        "other_metric": "value"
-    }
-    return calc
+def mock_evasion_attack_strategy():
+    strategy = MagicMock(spec=EvasionAttackStrategy)
+    strategy.attack_name = "MockedEvasionAttack"
+    # execute returns: attack_name, adversarial_examples, success_rate
+    adv_examples = np.random.rand(2, 784).astype(np.float32)
+    strategy.execute.return_value = (strategy.attack_name, adv_examples, 0.75)
+    return strategy
 
 @pytest.fixture
-def art_evaluator(mock_model_handler, mock_metrics_calculator):
-    # ARTEvaluator might take the model handler and metrics calculator upon init
-    # Or they might be passed to specific methods. Let's assume init.
-    # It also needs an ART estimator for the attack.
-    # The relationship between ModelHandler's model and the ART estimator needs to be clear.
-    # ARTEvaluator's evaluate_attack method takes an `art_estimator`.
+def mock_defence_strategy():
+    defence = MagicMock(spec=DefenceStrategy)
+    defence.name = "MockedDefence"
+    defence.get_params.return_value = {"param1": "value1"}
+    # apply should return a defended estimator
+    mock_defended_estimator = MagicMock()
+    mock_defended_estimator.predict.return_value = np.array([[0.3, 0.7],[0.6,0.4]])
+    defence.apply.return_value = mock_defended_estimator
+    return defence
 
-    # For this unit test, we'll focus on `evaluate_attack` and `generate_report`.
-    # `ARTEvaluator` itself might not need the handler/calculator in __init__.
-    evaluator = ARTEvaluator(
-        model_handler=mock_model_handler, # Assuming it takes these in init
-        metrics_calculator=mock_metrics_calculator
-    )
-    return evaluator
+@pytest.fixture
+@patch('auto_art.core.evaluation.metrics.calculator.MetricsCalculator')
+def art_evaluator_instance(MockMetricsCalculator, mock_model_obj, mock_evaluation_config, mock_art_estimator):
+    # Patch the art_estimator property to return our mock_art_estimator
+    with patch.object(ARTEvaluator, 'art_estimator', new_callable=pytest.PropertyMock) as mock_art_estimator_prop:
+        mock_art_estimator_prop.return_value = mock_art_estimator
 
+        # Mock MetricsCalculator instance used by ARTEvaluator
+        mock_mc_instance = MockMetricsCalculator.return_value
+        mock_mc_instance.calculate_basic_metrics.return_value = {'accuracy': 0.9}
+        mock_mc_instance.calculate_robustness_metrics.return_value = {'empirical_robustness': 0.6}
+        mock_mc_instance.calculate_security_score.return_value = 75.0
+        mock_mc_instance.calculate_wasserstein_distance.return_value = 0.1
 
-def test_art_evaluator_evaluate_attack(
-    art_evaluator,
-    mock_art_estimator, # This is crucial for the attack
-    mock_attack_wrapper,
-    mock_test_data,
-    mock_model_handler, # Used by evaluator for benign predictions
-    mock_metrics_calculator # Used for calculating metrics
-):
-    # The `evaluate_attack` method is central.
-    # It needs an ART estimator (which the attack was configured with), the attack wrapper, and test data.
+        evaluator = ARTEvaluator(
+            model_obj=mock_model_obj,
+            config=mock_evaluation_config
+        )
+        # Replace the ARTEvaluator's _metrics_calculator with our controlled mock instance
+        evaluator._metrics_calculator = mock_mc_instance
+        return evaluator
 
-    # ARTEvaluator.evaluate_attack signature might be:
-    # (self, art_estimator, attack_wrapper, test_data_x, test_data_y)
-    # Or it might take the TestData object directly.
-
-    # Let's assume it uses the model_handler for benign predictions
-    # and the art_estimator for predictions on adversarial data generated by the attack.
-
-    # Mock the model_handler's predict for benign predictions
-    benign_preds = np.array([[0.1, 0.9], [0.8, 0.2]])
-    mock_model_handler.predict.return_value = benign_preds
-
-    # Mock the art_estimator's predict for adversarial predictions
-    # The attack_wrapper.generate will produce x_adv
-    # Then art_estimator.predict(x_adv) will be called.
-    adversarial_preds = np.array([[0.7, 0.3], [0.2, 0.8]]) # Different from benign
-    mock_art_estimator.predict.return_value = adversarial_preds
+# Test for evaluate_model method
+def test_evaluate_model(art_evaluator_instance, mock_test_data_np, mock_evasion_attack_strategy, mock_defence_strategy, mock_art_estimator):
+    test_data_x, test_data_y = mock_test_data_np
 
     # Call the method under test
-    results = art_evaluator.evaluate_attack(
-        art_estimator=mock_art_estimator, # The ART estimator compatible with the attack
-        attack=mock_attack_wrapper,       # The AutoART attack wrapper
-        test_data=mock_test_data          # TestData object containing x and y
+    result = art_evaluator_instance.evaluate_model(
+        test_data=test_data_x,
+        test_labels=test_data_y,
+        attacks=[mock_evasion_attack_strategy],
+        defences=[mock_defence_strategy]
     )
 
-    # Assertions:
-    # 1. Attack's generate method was called with test_data.inputs
-    mock_attack_wrapper.generate.assert_called_once_with(x=mock_test_data.inputs, y=mock_test_data.expected_outputs)
+    assert result.success is True
+    assert "metrics" in result.metrics_data
+    assert "attacks" in result.metrics_data
+    assert "defences" in result.metrics_data
 
-    # 2. Model handler's predict was called for benign accuracy
-    mock_model_handler.predict.assert_called_once_with(mock_test_data.inputs)
+    # Check if attack strategy was executed
+    mock_evasion_attack_strategy.execute.assert_called_once_with(mock_art_estimator, test_data_x, test_data_y)
+    assert "MockedEvasionAttack" in result.metrics_data["attacks"]
+    assert result.metrics_data["attacks"]["MockedEvasionAttack"]["success_rate"] == 0.75
 
-    # 3. ART estimator's predict was called on adversarial examples
-    x_adv_generated = mock_attack_wrapper.generate.return_value
-    mock_art_estimator.predict.assert_called_once_with(x_adv_generated)
+    # Check if defence strategy was applied and evaluated
+    mock_defence_strategy.apply.assert_called_once_with(mock_art_estimator)
+    assert "MockedDefence" in result.metrics_data["defences"]
+    assert "accuracy_after_defence" in result.metrics_data["defences"]["MockedDefence"]
 
-    # 4. Metrics calculator was used
-    # This depends on how ARTEvaluator calls the metrics calculator.
-    # If it calls compute_all_metrics:
-    mock_metrics_calculator.compute_all_metrics.assert_called_once()
-    # Check arguments passed to compute_all_metrics if necessary.
-    # Example: (true_labels, benign_predictions, adversarial_predictions)
-    # args, _ = mock_metrics_calculator.compute_all_metrics.call_args
-    # assert np.array_equal(args[0], mock_test_data.expected_outputs)
-    # assert np.array_equal(args[1], benign_preds)
-    # assert np.array_equal(args[2], adversarial_preds)
+    # Check if metrics calculator methods were called for original and defended model
+    # Original model basic metrics
+    art_evaluator_instance._metrics_calculator.calculate_basic_metrics.assert_any_call(mock_art_estimator, test_data_x, test_data_y)
+    # Defended model basic metrics
+    defended_estimator = mock_defence_strategy.apply.return_value
+    art_evaluator_instance._metrics_calculator.calculate_basic_metrics.assert_any_call(defended_estimator, test_data_x, test_data_y)
 
-    # 5. Results structure
-    assert "metrics" in results
-    assert "attack_params" in results
-    assert "attack_name" in results
-    assert results["attack_name"] == "MockAttack"
-    assert results["metrics"]["accuracy_adversarial"] == 0.5 # From mock_metrics_calculator
+    art_evaluator_instance._metrics_calculator.calculate_robustness_metrics.assert_called_once()
+    art_evaluator_instance._metrics_calculator.calculate_security_score.assert_called_once()
 
 
-def test_art_evaluator_generate_report(art_evaluator, mock_model_handler):
-    # generate_report typically takes evaluation results and formats them.
-    evaluation_results_list = [
-        {
-            "attack_name": "FGSM",
-            "attack_params": {"eps": 0.1},
-            "metrics": {"accuracy_benign": 0.95, "accuracy_adversarial": 0.2, "attack_success_rate": 0.78}
+# Test for generate_report method
+def test_generate_report(art_evaluator_instance):
+    mock_eval_result = EvaluationResult(
+        success=True,
+        metrics_data={
+            'metrics': {'accuracy': 0.9, 'security_score': 75.0, 'empirical_robustness': 0.6},
+            'attacks': {"MockedEvasionAttack": {'success_rate': 0.75, 'perturbation_size': 0.05}},
+            'defences': {"MockedDefence": {'accuracy_after_defence': 0.85, "params": {"p1":1}}}
         },
-        {
-            "attack_name": "PGD",
-            "attack_params": {"eps": 0.1, "nb_iter": 10},
-            "metrics": {"accuracy_benign": 0.95, "accuracy_adversarial": 0.1, "attack_success_rate": 0.89}
-        }
-    ]
-
-    # Mock model metadata if the report includes it
-    mock_metadata = ModelMetadata(
-        model_type="PYTORCH", framework="pytorch",
-        input_shape=(None, 784), output_shape=(None, 10),
-        input_type="image", output_type="classification_probabilities",
-        layer_info=[{"name": "fc1", "type": "Linear"}]
+        execution_time=12.34
     )
-    # If ARTEvaluator gets metadata from ModelAnalyzer, that interaction might need mocking
-    # or assume metadata is passed in.
-    # For this unit test, let's assume it can get it from the model_handler or it's passed.
-
-    # If ARTEvaluator has a ModelAnalyzer instance or calls one:
-    # with patch.object(art_evaluator, 'model_analyzer', autospec=True) as mock_analyzer:
-    #    mock_analyzer.analyze.return_value = mock_metadata
-    #    report_str = art_evaluator.generate_report(evaluation_results_list, model_metadata=mock_metadata)
-
-    # For simplicity, let's assume generate_report can take metadata directly or gets it
-    # from its initialized model_handler (if the handler stores/provides it).
-
-    report_str = art_evaluator.generate_report(evaluation_results_list, model_metadata=mock_metadata)
+    report_str = art_evaluator_instance.generate_report(mock_eval_result)
 
     assert isinstance(report_str, str)
-    assert "Evaluation Report" in report_str
-    assert "Model Information" in report_str
-    assert "PYTORCH" in report_str # From mock_metadata
-    assert "FGSM" in report_str
-    assert "eps: 0.1" in report_str
-    assert "accuracy_adversarial: 0.2" in report_str
-    assert "PGD" in report_str
-    assert "accuracy_adversarial: 0.1" in report_str
+    assert "Adversarial Robustness Evaluation Report" in report_str
+    assert "Execution Time: 12.34 seconds" in report_str
+    assert "Overall Security Score: 75.00 / 100.0" in report_str
+    assert "MockedEvasionAttack" in report_str
+    assert "MockedDefence" in report_str
+    assert "Accuracy After Defence: 0.8500" in report_str
 
-# Add more tests for edge cases, different configurations, error handling etc.
-# For example, what if an attack fails to generate adversarial examples?
-# What if test_data is empty or malformed?
+
+# Test for evaluate_robustness_from_path (high-level, mocking collaborators)
+@patch('auto_art.implementations.models.factory.ModelFactory')
+@patch('auto_art.core.evaluation.art_evaluator.analyze_model_architecture_utility')
+@patch('auto_art.core.evaluation.art_evaluator.TestDataGenerator')
+@patch('auto_art.core.evaluation.art_evaluator.AttackGenerator')
+def test_evaluate_robustness_from_path(
+    MockAttackGenerator, MockTestDataGenerator, MockAnalyzeArch, MockModelFactory,
+    art_evaluator_instance, mock_evaluation_config # Use the instance for its config
+):
+    mock_model_loader = MockModelFactory.create_model.return_value
+    mock_model_obj_loaded = DummyTorchModel() # A fresh dummy model
+    mock_model_loader.load_model.return_value = (mock_model_obj_loaded, mock_evaluation_config.framework.value)
+
+    mock_model_metadata = ModelMetadata(
+        model_type=mock_evaluation_config.model_type.value,
+        framework=mock_evaluation_config.framework.value,
+        input_shape=(784,), output_shape=(2,),
+        input_type="tabular", output_type="classification"
+    )
+    MockAnalyzeArch.return_value = mock_model_metadata
+
+    mock_tdg_instance = MockTestDataGenerator.return_value
+    mock_test_data_obj = TestData(inputs=np.random.rand(2, 784), expected_outputs=np.array([0,1]))
+    mock_tdg_instance.generate_test_data.return_value = mock_test_data_obj
+    mock_tdg_instance.generate_expected_outputs.return_value = mock_test_data_obj.expected_outputs
+
+    mock_attack_gen_instance = MockAttackGenerator.return_value
+    mock_attack_gen_instance.supported_attacks = {mock_evaluation_config.model_type.value: ["fgsm"]} # Ensure it has some attacks
+
+    # Mock the _evaluate_single_attack_for_robustness method which is called in loop
+    # This avoids needing to mock AttackGenerator.create_attack and apply_attack deeply
+    mock_eval_metrics = EvaluationMetrics(0.9,0.2,0.78,0.05,0.1,mock_evaluation_config.model_type.value,"fgsm")
+    with patch.object(art_evaluator_instance, '_evaluate_single_attack_for_robustness', return_value=mock_eval_metrics) as mock_eval_single:
+        results = art_evaluator_instance.evaluate_robustness_from_path(
+            model_path="dummy/path.pt",
+            framework=mock_evaluation_config.framework.value,
+            num_samples=10
+        )
+
+    MockModelFactory.create_model.assert_called_once_with(mock_evaluation_config.framework.value)
+    mock_model_loader.load_model.assert_called_once_with("dummy/path.pt")
+    MockAnalyzeArch.assert_called_once_with(mock_model_obj_loaded, mock_evaluation_config.framework.value)
+    MockTestDataGenerator.assert_called_once() # Check it was instantiated
+    mock_tdg_instance.generate_test_data.assert_called_once_with(mock_model_metadata, 10)
+    mock_tdg_instance.generate_expected_outputs.assert_called_once_with(mock_model_obj_loaded, mock_test_data_obj)
+    MockAttackGenerator.assert_called_once() # Instantiated
+
+    assert "model_metadata" in results
+    assert "attack_results" in results
+    assert "fgsm" in results["attack_results"]
+    assert results["attack_results"]["fgsm"]["clean_accuracy"] == 0.9
+    mock_eval_single.assert_called_once() # Ensure the mocked attack evaluation loop ran
+
+# TODO: Add tests for error conditions in evaluate_robustness_from_path (e.g., model load fail)
+# TODO: Add tests for observer notifications
+# TODO: Test art_estimator property logic more directly
+# TODO: Test _calculate_accuracy_for_robustness, _calculate_perturbation_size_for_robustness, etc.
+#       if they have complex logic not covered by the end-to-end tests.
+#       Currently, _calculate_accuracy_for_robustness has significant branching.
+#       _evaluate_single_attack_for_robustness also has important logic.

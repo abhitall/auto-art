@@ -31,7 +31,7 @@ def test_placeholder_full_evaluation_pipeline():
     10. Generate and briefly inspect the report string for key elements (e.g., scores, attack name).
     This test requires significant setup and a runnable model.
     """
-    assert True, "This is a placeholder pipeline test."
+    pytest.skip("Placeholder for end-to-end pipeline test. Requires significant setup.")
 
 # Example structure (commented out):
 # def test_simple_pytorch_fgsm_evaluation(tmp_path):
