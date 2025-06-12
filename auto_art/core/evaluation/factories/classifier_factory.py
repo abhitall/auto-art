@@ -26,7 +26,10 @@ try:
     import tensorflow as tf
     _tf_available_for_gpu_check = True
 except ImportError:
-    pass
+    pass # Handled by _tf_available_for_gpu_check flag
+
+import logging # Import logging
+logger = logging.getLogger(__name__) # Get a logger instance
 
 
 class ClassifierFactory:
@@ -52,14 +55,14 @@ class ClassifierFactory:
                         if tf.config.list_physical_devices('GPU'):
                             final_device = "gpu"
                         else:
-                            # print("Warning: GPU requested but TensorFlow found no GPU. Falling back to CPU.", file=sys.stderr)
-                            pass # Stays cpu
-                    except Exception:
-                        # print("Warning: Error checking TensorFlow GPU. Falling back to CPU.", file=sys.stderr)
-                        pass
+                            logger.info("GPU requested but TensorFlow found no GPU. Falling back to CPU.")
+                            # pass # Stays cpu
+                    except Exception as e_tf_gpu:
+                        logger.warning(f"Error checking TensorFlow GPU: {e_tf_gpu}. Falling back to CPU.")
+                        # pass
                 else:
-                    # print("Warning: GPU requested but no compatible GPU backend (PyTorch/TensorFlow) found or usable. Falling back to CPU.", file=sys.stderr)
-                    pass
+                    logger.info("GPU requested but no compatible GPU backend (PyTorch/TensorFlow) found or usable. Falling back to CPU.")
+                    # pass
             else:
                 # print("Info: GPU usage is disabled by global 'use_gpu' config. Using CPU.", file=sys.stderr)
                 pass
@@ -73,10 +76,11 @@ class ClassifierFactory:
                     try:
                         if tf.config.list_physical_devices('GPU'):
                             final_device = "gpu"
-                    except Exception:
-                        pass
+                    except Exception as e_tf_gpu_auto:
+                        logger.warning(f"Error checking TensorFlow GPU during 'auto' detection: {e_tf_gpu_auto}. Assuming CPU.")
+                        # pass
             # If no GPU found or use_gpu is false, it remains 'cpu'
-            # print(f"Info: Device 'auto' resolved to '{final_device}'. (use_gpu: {cfg.use_gpu})", file=sys.stderr)
+            logger.info(f"Device 'auto' resolved to '{final_device}'. (use_gpu: {cfg.use_gpu})")
         else:
             # print(f"Warning: Invalid requested_device '{effective_request}'. Defaulting to CPU.", file=sys.stderr)
             final_device = "cpu" # Fallback for invalid string

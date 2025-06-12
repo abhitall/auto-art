@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from auto_art.core.attacks.evasion.fast_gradient_method import FastGradientMethodWrapper
-from auto_art.core.attacks.attack_generator import AttackGenerator # Assuming this is the correct import
+# from auto_art.core.attacks.attack_generator import AttackGenerator # Not directly used in these unit tests now
 from art.attacks.evasion import FastGradientMethod as ArtFastGradientMethod
 from art.estimators.classification import PyTorchClassifier # Example ART estimator
 import numpy as np
@@ -33,8 +33,8 @@ def attack_params_fgsm():
         "eps": 0.1,
         "eps_step": 0.01,
         "batch_size": 32,
-        "minimal": False, # Added as per ART FGSM defaults
-        "summary_writer": False # Added as per ART FGSM defaults
+        "minimal": False,
+        "summary_writer": False
     }
 
 # Test basic instantiation of the wrapper
@@ -61,8 +61,8 @@ def test_fgsm_wrapper_generate(art_classifier, attack_params_fgsm):
 
 # Test with y (targeted attack)
 def test_fgsm_wrapper_generate_with_y(art_classifier, attack_params_fgsm):
-    # Modify params for targeted if necessary, though FGSM y is for that
-    attack_params_fgsm["targeted"] = True # Ensure targeted is set if wrapper uses it
+    # Modify params for targeted if necessary
+    attack_params_fgsm["targeted"] = True # Ensure targeted is set
     wrapper = FastGradientMethodWrapper(art_classifier, attack_params_fgsm)
 
     wrapper.attack.generate = MagicMock(return_value=np.random.rand(5, 10))
@@ -72,9 +72,6 @@ def test_fgsm_wrapper_generate_with_y(art_classifier, attack_params_fgsm):
 
     x_adv = wrapper.generate(x_test, y=y_target)
 
-    # Check that y was passed to the ART attack's generate method
-    # Convert y_target to one-hot if the ART attack expects that and wrapper doesn't do it
-    # For FGSM, y is class labels, not one-hot.
     wrapper.attack.generate.assert_called_once()
     called_args, called_kwargs = wrapper.attack.generate.call_args
     assert np.array_equal(called_args[0], x_test) # x
@@ -83,64 +80,20 @@ def test_fgsm_wrapper_generate_with_y(art_classifier, attack_params_fgsm):
     assert isinstance(x_adv, np.ndarray)
     assert x_adv.shape == (5, 10)
 
-# Integration with AttackGenerator (Simplified)
-# This tests if AttackGenerator can create the FGSM wrapper
-@patch('auto_art.core.attacks.evasion.fast_gradient_method.FastGradientMethodWrapper')
-def test_attack_generator_creates_fgsm(MockFgsmWrapper, art_classifier):
-    # Mock AttackGenerator's internal logic if it's too complex,
-    # or test its create_attack directly.
-    # For this example, we assume AttackGenerator.create_attack exists and
-    # can find and instantiate FastGradientMethodWrapper.
-
-    attack_generator = AttackGenerator(art_classifier) # AttackGenerator needs an estimator
-
-    attack_name = "fast_gradient_method" # Or however FGSM is identified
-    attack_config = {
-        "module": "auto_art.core.attacks.evasion.fast_gradient_method", # Path to the wrapper
-        "class": "FastGradientMethodWrapper",
-        "params": {"eps": 0.05, "eps_step": 0.005, "batch_size": 16, "minimal": False, "summary_writer": False}
-    }
-
-    # This part depends on AttackGenerator's implementation details
-    # Let's assume create_attack takes the name and a config dict
-    # For a more direct test, we might need to register the attack first if AttackGenerator uses a registry
-
-    # If AttackGenerator uses a registry:
-    # attack_generator.register_attack_wrapper(attack_name, FastGradientMethodWrapper)
-    # created_attack = attack_generator.create_attack(attack_name, attack_config["params"])
-
-    # If AttackGenerator dynamically imports:
-    # This is harder to test directly without knowing its exact import mechanism.
-    # The patch above helps simulate that it *would* find and call the wrapper.
-
-    # Let's assume a simplified scenario where AttackGenerator might have a method
-    # that directly takes the wrapper class for testing, or we patch the lookup.
-
-    # For the purpose of this unit test of the wrapper, we'll focus on the wrapper's direct functionality.
-    # The AttackGenerator integration test is better suited for tests/integration.
-    # However, if AttackGenerator has a simple method like `_get_wrapper_class`, we could patch that.
-
-    # Let's re-evaluate: The issue asks for unit tests for attack wrappers.
-    # The test above (`test_fgsm_wrapper_instantiation` and `test_fgsm_wrapper_generate`)
-    # are good unit tests for the wrapper itself.
-    # The interaction with AttackGenerator should be in an integration test.
-    # So, the `test_attack_generator_creates_fgsm` might be too much for a *unit* test of the wrapper.
-    # Let's remove it from here and ensure it's covered in `tests/integration`.
-
-    # We can add a test for parameter validation if the wrapper does any.
-    pass # Placeholder if we remove the AttackGenerator part from this unit test.
-
-
 def test_fgsm_wrapper_invalid_params(art_classifier):
-    with pytest.raises(TypeError): # Example: if required param 'eps' is missing
-        FastGradientMethodWrapper(art_classifier, {"eps_step": 0.01}) # Missing eps
+    with pytest.raises(TypeError): # Example: if required param 'eps' is missing from ART's perspective
+        # Assuming FastGradientMethodWrapper passes params directly and ART's FGSM needs 'eps'
+        FastGradientMethodWrapper(art_classifier, {"eps_step": 0.01, "minimal": False, "summary_writer": False})
 
-    with pytest.raises(ValueError): # Example: if 'eps' is negative
+    with pytest.raises(ValueError): # Example: if 'eps' is negative (ART's FGSM validation)
         FastGradientMethodWrapper(art_classifier, {"eps": -0.1, "eps_step": 0.01, "minimal": False, "summary_writer": False})
 
 # Note: The actual exceptions (TypeError, ValueError) and conditions depend on
-# FastGradientMethodWrapper's __init__ and ART's FastGradientMethod's validation.
-# This test assumes the wrapper might add its own validation or pass params directly.
-# If params are passed directly to ART's attack, then ART's validation applies.
+# ART's FastGradientMethod's validation, as the wrapper passes params through.
 # The wrapper itself might not add much validation beyond what ART provides.
 # The ValueError for negative eps is a common check in ART attacks.
+# The TypeError for missing 'eps' depends on ART's specific __init__ for FastGradientMethod.
+# If ART's FGSM has a default for 'eps', TypeError might not be raised.
+# For this test, we assume 'eps' is mandatory for ART's FGSM for demonstration.
+# If the wrapper has its own validation, this test would target that.
+# Based on current FastGradientMethodWrapper, it passes params directly.
