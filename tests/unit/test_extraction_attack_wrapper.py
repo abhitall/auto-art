@@ -90,7 +90,7 @@ def test_copycat_cnn_wrapper_instantiation_and_generate(
     assert stolen_classifier_from_art is mock_stolen_classifier
     # The wrapper would then likely return this stolen_classifier, perhaps wrapped in an AutoART ModelHandler.
 
-# Placeholder for more specific tests if the wrapper has unique logic
+# FUTURE: Add more specific tests if the wrapper develops unique logic beyond basic ART pass-through.
 def test_copycat_cnn_wrapper_specific_logic():
     # If the AutoART wrapper for CopycatCNN adds any specific preprocessing, parameter validation,
     # or postprocessing, those should be tested here.

@@ -311,15 +311,10 @@ class TestDataGenerator(BaseTestGenerator): # Inherit from BaseTestGenerator
             raise ValueError(f"Unsupported input_shape for synthetic text data: {metadata.input_shape}")
 
     def _generate_multimodal_data(self, metadata: ModelMetadata, num_samples: int) -> TestData:
-        # This requires metadata.input_shape to be a Dict[str, Tuple] or similar structured info.
-        # The current ModelMetadata.input_shape is Tuple.
-        # This method needs significant rework if ModelMetadata isn't changed.
-        # For now, raising NotImplementedError as the previous fallback was not truly multimodal.
-        # print("Warning: True synthetic multimodal data generation requires structured input_shape in ModelMetadata (e.g., a Dict).", file=sys.stderr)
-        # A placeholder that returns a dictionary of inputs as required by TestData type hint
-        # This is still very basic and assumes two modalities for demonstration.
+        # This method generates multimodal data based on 'multimodal_config' found in ModelMetadata.additional_info.
+        # 'multimodal_config' should be a dictionary where keys are modality names and values are
+        # dictionaries containing 'input_type', 'input_shape', and optionally 'additional_info' for that modality.
 
-        # Try to parse additional_info for multimodal structure if available
         mm_config = metadata.additional_info.get('multimodal_config')
         if isinstance(mm_config, dict):
             inputs_dict: Dict[str, np.ndarray] = {}

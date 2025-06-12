@@ -10,7 +10,7 @@ from art.attacks.evasion import FastGradientMethod, ProjectedGradientDescent, De
 from art.attacks.inference import ModelInversion as ARTModelInversion
 from art.estimators.classification import PyTorchClassifier, TensorFlowClassifier # Keep for type checks, but factory will create
 from art.estimators.generation import PyTorchGenerator
-from art.estimators.regression import PyTorchRegressor
+from art.estimators.regression import PyTorchRegressor, TensorFlowRegressor, KerasRegressor
 # ClassifierNeuralNetwork will be imported conditionally where needed
 
 from ...core.base import ModelMetadata
@@ -46,9 +46,15 @@ from .llm.hotflip import HotFlipWrapper
 import torch # For default PyTorch loss in helper
 
 class AttackGenerator:
-    """Generates and applies appropriate adversarial attacks based on model type."""
+    """Generates and applies appropriate adversarial attacks based on model type.
+
+    The generator can create instances of ART attacks or custom wrappers defined
+    within this module. It uses `AttackConfig` to determine the type and parameters
+    of the attack to be created.
+    """
 
     def __init__(self):
+        """Initializes AttackGenerator and its list of supported attack types per category."""
         self.supported_attacks = {
             'classification': ['fgsm', 'pgd', 'deepfool', 'autoattack', 'carlini_wagner_l2', 'boundary_attack'],
             'poisoning': ['backdoor', 'clean_label', 'feature_collision', 'gradient_matching'],
@@ -88,6 +94,39 @@ class AttackGenerator:
         )
 
     def create_attack(self, model: Optional[Any], metadata: Optional[ModelMetadata], config: AttackConfig) -> Any:
+        """Creates an attack instance based on the provided model, metadata, and configuration.
+
+        The method determines the attack category (e.g., 'classification', 'poisoning') from the
+        `config.attack_type`. It then dispatches to a category-specific helper method
+        (e.g., `_create_classification_attack`, `_create_poisoning_attack`) to instantiate
+        the attack.
+
+        Args:
+            model: The raw model object (e.g., PyTorch nn.Module, TensorFlow Keras model) or
+                   an ART estimator instance. The type required depends on the attack category:
+                   - Evasion (classification, regression), Poisoning (for crafting), LLM: Raw model object.
+                   - Extraction, Inference, Generator (for ART's ModelInversion): ART estimator instance.
+            metadata: ModelMetadata object containing information about the model. Required for
+                      attacks that need to know model specifics like input/output shapes, framework, etc.,
+                      especially when `model` is a raw model object.
+            config: AttackConfig object specifying the `attack_type` and its parameters.
+                    Direct fields from AttackConfig (e.g., `epsilon`, `max_iter`) are used where
+                    applicable. Less common or attack-specific parameters should be provided via
+                    `config.additional_params`.
+
+        Returns:
+            An instance of an ART attack class (e.g., art.attacks.evasion.FastGradientMethod) or
+            an instance of a custom attack wrapper from this module (e.g., BackdoorAttackWrapper),
+            depending on the attack type and category. For evasion attacks and some others,
+            this often returns the direct ART attack object (e.g., wrapper_instance.attack).
+            For wrappers managing their own execution (poisoning, extraction, some inference),
+            it returns the wrapper instance itself.
+
+        Raises:
+            ValueError: If model/metadata requirements are not met for the attack type,
+                        or if the attack type is unsupported.
+            TypeError: If model types are incorrect for specific attacks (e.g., needing ClassifierNeuralNetwork).
+        """
         num_classes = 0
         if metadata: # Calculate once if metadata is available
             if metadata.output_shape and isinstance(metadata.output_shape[-1], int) and metadata.output_shape[-1] > 0:
@@ -179,7 +218,20 @@ class AttackGenerator:
 
     def _create_poisoning_attack(self, model_for_crafting: Optional[Any],
                                  metadata_for_crafting_model: Optional[ModelMetadata],
-                                 config: AttackConfig, num_classes: int) -> Any: # Added num_classes
+                                 config: AttackConfig, num_classes: int) -> Any:
+        """Creates a poisoning attack instance.
+
+        Args:
+            model_for_crafting: The raw model object to be used for crafting some types of poisoning attacks
+                                (e.g., clean_label, feature_collision, gradient_matching). This model's
+                                gradients or internal states might be used by the attack.
+            metadata_for_crafting_model: ModelMetadata for `model_for_crafting`.
+            config: AttackConfig object.
+            num_classes: Number of classes, used for creating ART estimator for crafting.
+
+        Returns:
+            An instance of a poisoning attack wrapper.
+        """
         attack_type_lower = config.attack_type.lower()
         params = config.additional_params or {}
 
@@ -230,6 +282,15 @@ class AttackGenerator:
             raise ValueError(f"Unsupported poisoning attack type: {config.attack_type}")
 
     def _create_extraction_attack(self, victim_classifier_obj: Any, config: AttackConfig) -> Any:
+        """Creates a model extraction attack instance.
+
+        Args:
+            victim_classifier_obj: An ART estimator instance representing the victim model.
+            config: AttackConfig object.
+
+        Returns:
+            An instance of an extraction attack wrapper.
+        """
         # victim_classifier_obj is already an ART estimator
         attack_type_lower = config.attack_type.lower()
         params = config.additional_params or {}
@@ -251,6 +312,15 @@ class AttackGenerator:
             raise ValueError(f"Unsupported extraction attack type: {config.attack_type}")
 
     def _create_inference_attack(self, target_model_obj: Any, config: AttackConfig) -> Any:
+        """Creates a model inference attack instance.
+
+        Args:
+            target_model_obj: An ART estimator instance representing the target model.
+            config: AttackConfig object.
+
+        Returns:
+            An instance of an inference attack wrapper.
+        """
         # target_model_obj is already an ART estimator
         attack_type_lower = config.attack_type.lower()
         params = config.additional_params or {}
@@ -274,6 +344,16 @@ class AttackGenerator:
             raise ValueError(f"Unsupported inference attack type: {config.attack_type}")
 
     def _create_regression_attack(self, model_obj: Any, metadata: ModelMetadata, config: AttackConfig) -> Any:
+        """Creates an evasion attack instance for regression models.
+
+        Args:
+            model_obj: The raw regression model object.
+            metadata: ModelMetadata for `model_obj`.
+            config: AttackConfig object.
+
+        Returns:
+            An instance of an ART evasion attack suitable for regression.
+        """
         art_input_shape = metadata.input_shape
         if isinstance(art_input_shape, tuple) and len(art_input_shape) > 0 and art_input_shape[0] is None:
             art_input_shape = art_input_shape[1:]
@@ -285,9 +365,27 @@ class AttackGenerator:
         if metadata.framework == 'pytorch':
             regressor = PyTorchRegressor(model=model_obj, loss=config.additional_params.get('loss_fn', torch.nn.MSELoss()),
                                          input_shape=art_input_shape, device_type=resolved_device_for_regressor)
-        # TODO: Add TensorFlowRegressor and other framework regressors if ART supports them and they are needed.
-        # elif metadata.framework in ['tensorflow', 'keras']:
-        #     regressor = TensorFlowRegressor(...) # TensorFlowRegressor does not take device_type
+        elif metadata.framework == 'tensorflow':
+            # TensorFlowRegressor does not take device_type. Loss function needs to be a TF one.
+            # User should provide a suitable TF loss function in additional_params if not default.
+            # For now, cannot assume tf is imported to provide a default tf.keras.losses.MeanSquaredError.
+            # Let's make loss_fn mandatory in additional_params for TF/Keras if not providing a smart default here.
+            tf_loss_fn = config.additional_params.get('loss_fn')
+            if tf_loss_fn is None:
+                # Consider raising an error or logging a warning and using a placeholder that ART might handle or ignore.
+                # For now, let ART try to handle it or error out if loss is critical and not part of model.
+                # print("Warning: No 'loss_fn' provided in additional_params for TensorFlowRegressor. Model must be compiled with loss or ART default used.", file=sys.stderr)
+                pass # ART will use a default if model is not compiled with loss.
+            regressor = TensorFlowRegressor(model=model_obj, input_shape=art_input_shape, loss=tf_loss_fn,
+                                            preprocessing=getattr(model_obj, 'preprocess_input', None)) # Basic attempt to get preprocessing
+        elif metadata.framework == 'keras':
+            # KerasRegressor also does not take device_type.
+            keras_loss_fn = config.additional_params.get('loss_fn')
+            if keras_loss_fn is None:
+                # print("Warning: No 'loss_fn' provided in additional_params for KerasRegressor. Model must be compiled with loss or ART default used.", file=sys.stderr)
+                pass
+            regressor = KerasRegressor(model=model_obj, input_shape=art_input_shape, loss=keras_loss_fn,
+                                       preprocessing=getattr(model_obj, 'preprocess_input', None)) # Basic attempt
         else:
             raise ValueError(f"Unsupported framework for regression: {metadata.framework}")
 
@@ -303,6 +401,19 @@ class AttackGenerator:
             raise ValueError(f"Unsupported attack type for regression: {config.attack_type}")
 
     def _create_generator_attack(self, model_estimator_or_raw_model: Any, metadata: Optional[ModelMetadata], config: AttackConfig) -> Any:
+        """Creates an attack instance relevant to generative models or model inversion.
+
+        Currently primarily supports ART's ModelInversion attack which targets a classifier.
+
+        Args:
+            model_estimator_or_raw_model: For 'inversion', this must be an ART classifier estimator.
+                                           For future generator-specific attacks, this could be a raw generator model.
+            metadata: ModelMetadata, potentially used if `model_estimator_or_raw_model` is a raw model.
+            config: AttackConfig object.
+
+        Returns:
+            An instance of an ART attack (e.g., ModelInversion).
+        """
         attack_type_lower = config.attack_type.lower()
         params = config.additional_params or {}
 
@@ -327,6 +438,17 @@ class AttackGenerator:
             raise ValueError(f"Unsupported attack type '{attack_type_lower}' or model setup for generator category.")
 
     def _create_llm_attack(self, model_obj: Any, metadata: ModelMetadata, config: AttackConfig, num_classes: int) -> Any:
+        """Creates an attack instance for Large Language Models (LLMs).
+
+        Args:
+            model_obj: The raw LLM model object.
+            metadata: ModelMetadata for `model_obj`.
+            config: AttackConfig object.
+            num_classes: Number of classes (used for wrapping LLM as a classifier).
+
+        Returns:
+            An instance of an ART LLM attack (via a wrapper, e.g., HotFlipWrapper's .attack property).
+        """
         attack_type_lower = config.attack_type.lower()
         params = config.additional_params or {}
 
@@ -348,6 +470,32 @@ class AttackGenerator:
     def apply_attack(self, attack_instance: Any, test_inputs: np.ndarray,
                      test_labels: Optional[np.ndarray] = None,
                      batch_size_override: Optional[int] = None) -> np.ndarray:
+        """Applies a generated evasion-style attack instance to input data.
+
+        This method is intended for ART attack objects that have a `generate` method
+        (e.g., evasion attacks like FGSM, PGD, or wrappers that expose such an ART object).
+        It should NOT be used for attack wrappers that have their own distinct execution
+        methods like `extract` (for extraction attacks) or `poison` (for some poisoning attacks).
+
+        Args:
+            attack_instance: The ART attack object or a wrapper instance whose `.attack`
+                             property holds the ART attack object.
+            test_inputs: Input data (numpy array) to generate adversarial examples for.
+            test_labels: True labels for `test_inputs`. Required for targeted attacks
+                         or some untargeted attacks that use true labels for guidance.
+            batch_size_override: Optional batch size to use for this specific `generate` call,
+                                 potentially overriding the batch size set at attack creation.
+                                 Mainly relevant for attacks like BoundaryAttack.
+
+        Returns:
+            A numpy array containing the adversarial examples.
+
+        Raises:
+            TypeError: If `attack_instance` is a wrapper type that should use its own
+                       specific execution method (e.g., `extract`, `infer`, `generate_poisons`)
+                       instead of this generic `apply_attack`.
+            ValueError: If a targeted attack requires `test_labels` but they are not provided.
+        """
         instance_class_name = attack_instance.__class__.__name__
         # Check if it's one of our specific wrappers that have their own generate/extract/infer methods
         if any(wrapper_name in instance_class_name for wrapper_name in

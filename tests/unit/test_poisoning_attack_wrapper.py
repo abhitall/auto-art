@@ -10,7 +10,6 @@ from art.estimators.classification import PyTorchClassifier # Example ART estima
 import numpy as np
 import torch
 
-# Placeholder for a generic poisoning wrapper if one exists, or use a specific one.
 # If auto_art.core.attacks.poisoning has its own wrappers, import from there.
 # For this example, let's imagine a CleanLabelWrapper in that path.
 # If not, this test would be for a hypothetical wrapper.
@@ -169,13 +168,6 @@ def mock_art_classifier(): # Simpler mock for some tests
 # Assume a wrapper exists at: auto_art.core.attacks.poisoning.wrapper_name.WrapperName
 # For example, auto_art.core.attacks.poisoning.clean_label.CleanLabelAttackWrapper
 
-# Let's assume a hypothetical `PoisoningAttackWrapperBase` that specific wrappers inherit from,
-# and it handles the creation of the ART attack instance.
-
-# If the actual wrapper is, e.g., `auto_art.core.attacks.poisoning.feature_collision.FeatureCollisionWrapper`
-# then the test should be for that specific wrapper.
-# The PRD lists "Feature Collision" and "Gradient Matching" under poisoning.
-
 # Let's write a test for a hypothetical "FeatureCollisionWrapper"
 # Assume it wraps art.attacks.poisoning.FeatureCollisionAttack
 
@@ -209,4 +201,4 @@ def test_feature_collision_wrapper_example(
 
     # For now, this test is more illustrative of how one *would* test such a wrapper.
     # It needs a concrete wrapper from auto_art.
-    assert True # Placeholder assertion
+    # Removed 'assert True' placeholder.

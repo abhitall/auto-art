@@ -89,7 +89,7 @@ def test_membership_inference_wrapper_instantiation_and_infer(
     assert np.array_equal(result_from_art, inferred_membership)
     assert result_from_art.shape == (200,)
 
-# Placeholder for more specific tests
+# FUTURE: Add more specific tests for different inference attack types and configurations.
 def test_membership_inference_wrapper_specific_logic():
     # Test any unique logic in the AutoART wrapper for membership inference.
     # e.g., handling of different attack_model_types, input validation.

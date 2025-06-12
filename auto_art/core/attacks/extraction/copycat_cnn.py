@@ -39,9 +39,25 @@ class CopycatCNNWrapper:
                  verbose: bool = True,
                  **kwargs: Any # For other ARTCopycatCNN init params e.g. query_batch_size
                  ):
+        """Initializes the CopycatCNNWrapper.
+
+        This constructor stores the configuration for the CopycatCNN attack.
+        The actual ART attack instance (`ARTCopycatCNN`) is created within the `extract`
+        method, as it also requires the `classifier_thief` instance.
+
+        Args:
+            victim_classifier: An ART `ClassifierMixin` instance representing the victim model.
+            batch_size_query: Batch size for querying the victim model.
+            nb_epochs_copycat: Number of epochs to train the copycat model.
+            nb_stolen_samples: Number of samples to steal from the victim model.
+            use_probabilities: If True, use probability vectors from the victim model;
+                               otherwise, use predicted labels.
+            verbose: Show progress bars.
+            **kwargs: Additional keyword arguments to be passed to the
+                      `art.attacks.extraction.CopycatCNN` constructor.
+        """
         if not ART_AVAILABLE:
             raise ImportError("Adversarial Robustness Toolbox (ART) is not installed. CopycatCNN cannot be used.")
-
         if not isinstance(victim_classifier, ClassifierMixin): # type: ignore
             raise TypeError("victim_classifier must be an ART ClassifierMixin.")
 
