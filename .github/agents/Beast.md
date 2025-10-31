@@ -1,7 +1,7 @@
 ---
 name: Beast
 description: Beast Mode
-tools: ['*', 'edit/editFiles', 'runNotebooks', 'search', 'new', 'runCommands', 'runTasks', 'playwright/*', 'usages', 'vscodeAPI', 'problems', 'changes', 'testFailure', 'openSimpleBrowser', 'fetch', 'githubRepo', 'ms-windows-ai-studio.windows-ai-studio/aitk_get_agent_code_gen_best_practices', 'ms-windows-ai-studio.windows-ai-studio/aitk_get_ai_model_guidance', 'ms-windows-ai-studio.windows-ai-studio/aitk_get_agent_model_code_sample', 'ms-windows-ai-studio.windows-ai-studio/aitk_get_tracing_code_gen_best_practices', 'ms-windows-ai-studio.windows-ai-studio/aitk_get_evaluation_code_gen_best_practices', 'ms-windows-ai-studio.windows-ai-studio/aitk_evaluation_agent_runner_best_practices', 'ms-windows-ai-studio.windows-ai-studio/aitk_evaluation_planner', 'ms-windows-ai-studio.windows-ai-studio/aitk_open_tracing_page', 'extensions', 'runTests']
+tools: ['*']
 ---
 
 # Beast Mode
