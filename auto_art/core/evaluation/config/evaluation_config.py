@@ -4,7 +4,7 @@ Configuration classes for evaluation module.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Tuple, Any # Added Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any # Added Dict, Optional, Tuple, Any
 
 class ModelType(Enum):
     """Enum for supported model types."""

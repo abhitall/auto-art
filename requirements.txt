@@ -1,15 +1,25 @@
-numpy>=1.19.0
-torch>=1.7.0
-tensorflow-cpu>=2.4.0
-scikit-learn>=0.24.0
-adversarial-robustness-toolbox>=1.13.0
-opencv-python>=4.5.0
-matplotlib>=3.3.0
-pandas>=1.2.0
-tqdm>=4.50.0
-pytest>=7.0
-black>=23.0
-isort>=5.0.0
-mypy>=0.800
-Flask>=2.0
-pytest-mock>=3.0
+# Core Dependencies
+numpy>=1.19.0,<2.0.0
+adversarial-robustness-toolbox>=1.13.0,<2.0.0
+scikit-learn>=0.24.0,<2.0.0
+opencv-python>=4.5.0,<5.0.0
+matplotlib>=3.3.0,<4.0.0
+pandas>=1.2.0,<3.0.0
+tqdm>=4.50.0,<5.0.0
+Flask>=2.0.0,<4.0.0
+
+# Deep Learning Frameworks (install as needed)
+# For PyTorch:
+torch>=1.7.0,<3.0.0
+
+# For TensorFlow CPU (lighter weight):
+tensorflow-cpu>=2.4.0,<3.0.0
+
+# Development Dependencies
+pytest>=7.0.0,<9.0.0
+pytest-cov>=4.0.0,<6.0.0
+pytest-mock>=3.0.0,<4.0.0
+black>=23.0.0,<25.0.0
+isort>=5.0.0,<6.0.0
+mypy>=0.800,<2.0.0
+flake8>=4.0.0,<8.0.0

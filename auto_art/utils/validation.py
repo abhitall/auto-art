@@ -4,34 +4,47 @@ Validation utilities for model and data validation.
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
+import logging
+from ..core.base import BaseModel
 from ..core.interfaces import ModelInterface
 
+logger = logging.getLogger(__name__)
+
 def validate_model(model: Any) -> None:
-    """Validate model structure and required attributes."""
+    """
+    Validate model structure and required attributes.
+
+    Args:
+        model: The model object or model handler to validate.
+
+    Raises:
+        ValueError: If model is invalid or missing required attributes.
+    """
     if model is None:
         raise ValueError("Model cannot be None")
-    
-    # Check if model implements required interface
-    if not isinstance(model, ModelInterface):
-        raise ValueError("Model must implement ModelInterface")
-    
-    # Check for required attributes
-    required_attrs = ['input_shape', 'output_shape']
-    for attr in required_attrs:
-        if not hasattr(model, attr):
-            raise ValueError(f"Model must have {attr} attribute")
-    
-    # Validate shapes
-    if not isinstance(model.input_shape, tuple):
-        raise ValueError("Model input_shape must be a tuple")
-    if not isinstance(model.output_shape, tuple):
-        raise ValueError("Model output_shape must be a tuple")
-    
-    # Validate shape dimensions
-    if len(model.input_shape) < 2:
-        raise ValueError("Model input_shape must have at least 2 dimensions")
-    if len(model.output_shape) < 1:
-        raise ValueError("Model output_shape must have at least 1 dimension")
+
+    # Check if model is a handler (BaseModel subclass) or implements ModelInterface protocol
+    # Note: Model handlers inherit from BaseModel, not ModelInterface (which is a Protocol)
+    is_base_model = isinstance(model, BaseModel)
+    is_model_interface = isinstance(model, ModelInterface)
+
+    if not (is_base_model or is_model_interface):
+        # For raw models (PyTorch, TensorFlow, etc.), we check for basic prediction capability
+        if not (hasattr(model, 'predict') or hasattr(model, 'forward') or hasattr(model, '__call__')):
+            logger.warning(
+                "Model does not inherit from BaseModel or implement ModelInterface. "
+                "Checking for basic prediction methods (predict/forward/__call__)."
+            )
+
+    # For model handlers, check required methods
+    if is_base_model:
+        required_methods = ['load_model', 'analyze_architecture', 'get_model_predictions']
+        for method in required_methods:
+            if not hasattr(model, method):
+                raise ValueError(f"Model handler must have {method} method")
+
+    # Raw models don't necessarily have input_shape/output_shape attributes
+    # These are determined during analysis
 
 def validate_data(
     data: np.ndarray,
