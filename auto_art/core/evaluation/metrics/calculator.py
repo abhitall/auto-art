@@ -5,6 +5,7 @@ Metrics calculator for model evaluation.
 from typing import Any, Dict, List, Optional
 from functools import lru_cache
 import numpy as np
+import logging
 from art.metrics import (
     empirical_robustness,
     loss_sensitivity,
@@ -13,6 +14,9 @@ from art.metrics import (
     wasserstein_distance # Added import
 )
 import sys # For printing warnings if needed, though commented out in prompt
+
+# Configure logger for this module
+logger = logging.getLogger(__name__)
 
 # Constants
 CACHE_SIZE = 128
@@ -82,11 +86,19 @@ class MetricsCalculator:
                     data[i]
                 )
                 clever_scores.append(score)
-            except Exception: #NOSONAR
-                continue #NOSONAR
+            except (ValueError, RuntimeError, AttributeError) as e:
+                # Log specific errors but continue with remaining samples
+                logger.warning(f"Failed to calculate CLEVER score for sample {i}: {type(e).__name__}: {e}")
+                continue
+            except Exception as e:
+                # Log unexpected errors but continue processing
+                logger.error(f"Unexpected error calculating CLEVER score for sample {i}: {type(e).__name__}: {e}")
+                continue
 
         if clever_scores:
             metrics['average_clever_score'] = float(np.mean(clever_scores))
+        else:
+            logger.warning("No CLEVER scores could be calculated for any samples")
 
         if hasattr(classifier, 'model') and hasattr(classifier.model, 'tree_'):
             metrics['tree_verification'] = self._calculate_tree_verification(
@@ -142,10 +154,15 @@ class MetricsCalculator:
         data: np.ndarray,
         labels: np.ndarray
     ) -> Optional[float]:
+        """Calculate tree verification metric for tree-based models."""
         try:
             verification = RobustnessVerificationTreeModelsCliqueMethod(classifier)
             return float(verification(data, labels))
-        except Exception: #NOSONAR
+        except (ValueError, AttributeError, TypeError) as e:
+            logger.warning(f"Tree verification not applicable or failed: {type(e).__name__}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error in tree verification: {type(e).__name__}: {e}")
             return None
 
     def calculate_security_score(self,
@@ -230,9 +247,15 @@ class MetricsCalculator:
         try:
             distance = wasserstein_distance(data_batch_1_flat, data_batch_2_flat)
             return float(distance)
-        except ImportError: # Typically due to SciPy not being installed
-            # print("SciPy is not installed. Wasserstein distance cannot be calculated.", file=sys.stderr) #NOSONAR
+        except ImportError as e:
+            # SciPy not installed or import error
+            logger.warning(f"Cannot calculate Wasserstein distance: SciPy not available - {e}")
             return None
-        except Exception as e: #NOSONAR
-            # print(f"Error calculating Wasserstein distance: {e}", file=sys.stderr) #NOSONAR
+        except (ValueError, TypeError) as e:
+            # Invalid data shapes or types
+            logger.warning(f"Invalid data for Wasserstein distance calculation: {type(e).__name__}: {e}")
+            return None
+        except Exception as e:
+            # Unexpected errors
+            logger.error(f"Unexpected error calculating Wasserstein distance: {type(e).__name__}: {e}")
             return None

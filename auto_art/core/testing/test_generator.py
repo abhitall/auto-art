@@ -27,6 +27,11 @@ except ImportError:
     pass
 
 
+class SecurityError(Exception):
+    """Exception raised for security-related issues in file loading."""
+    pass
+
+
 @dataclass
 class TestData:
     """Container for generated test data."""
@@ -147,16 +152,46 @@ class TestDataGenerator(BaseTestGenerator): # Inherit from BaseTestGenerator
         if isinstance(source, (str, Path)):
             source_path = Path(source)
             source_metadata['source_path'] = str(source_path)
+
+            # Security: Validate and sanitize file path
+            try:
+                # Resolve to absolute path to prevent path traversal
+                source_path = source_path.resolve(strict=True)
+            except (OSError, RuntimeError) as e:
+                raise ValueError(f"Invalid or inaccessible file path: {source_path}") from e
+
+            # Security: Check file size to prevent resource exhaustion
+            MAX_FILE_SIZE = 1024 * 1024 * 1024  # 1GB limit
+            file_size = source_path.stat().st_size
+            if file_size > MAX_FILE_SIZE:
+                raise ValueError(f"File size ({file_size} bytes) exceeds maximum allowed size ({MAX_FILE_SIZE} bytes)")
+
             if not source_path.exists():
                 raise FileNotFoundError(f"Data source file not found: {source_path}")
 
             ext = source_path.suffix.lower()
             if ext == '.npy':
-                loaded_inputs = np.load(source_path, allow_pickle=True)
+                # Security: Disable pickle for safety. Use NPY files with structured data types instead.
+                # If pickle is absolutely required, implement additional validation.
+                try:
+                    loaded_inputs = np.load(source_path, allow_pickle=False)
+                except ValueError as e:
+                    # If file requires pickle, raise security error
+                    raise SecurityError(
+                        f"File {source_path} requires pickle deserialization, which is a security risk. "
+                        f"Please use NPY files with standard numpy dtypes or implement additional security validation."
+                    ) from e
                 source_metadata['format'] = 'npy'
             elif ext == '.npz':
                 source_metadata['format'] = 'npz'
-                data_archive = np.load(source_path, allow_pickle=True)
+                try:
+                    data_archive = np.load(source_path, allow_pickle=False)
+                except ValueError as e:
+                    # If file requires pickle, raise security error
+                    raise SecurityError(
+                        f"File {source_path} requires pickle deserialization, which is a security risk. "
+                        f"Please use NPZ files with standard numpy dtypes or implement additional security validation."
+                    ) from e
                 # Heuristic key finding, can be made more robust or configurable
                 x_keys = ['x', 'features', 'inputs', 'x_train', 'x_test', 'arr_0'] # arr_0 for unnamed single array
                 y_keys = ['y', 'labels', 'outputs', 'y_train', 'y_test', 'arr_1'] # arr_1 for unnamed second array
@@ -370,10 +405,8 @@ class TestDataGenerator(BaseTestGenerator): # Inherit from BaseTestGenerator
                     }
                     return TestData(inputs=inputs_dict, metadata={'input_type': 'multimodal_fallback_dict',
                                                                         'generation_method': 'synthetic_multimodal_simple_split'})
-                except Exception as e: #NOSONAR
-                     raise ValueError(f"Fallback multimodal generation failed for input_shape {metadata.input_shape}. Error: {e}")
+                except (ValueError, TypeError, AttributeError) as e:
+                     raise ValueError(f"Fallback multimodal generation failed for input_shape {metadata.input_shape}. Error: {e}") from e
 
 
             raise NotImplementedError("Synthetic multimodal data generation requires 'multimodal_config' in ModelMetadata.additional_info, or a simple tuple input_shape for basic fallback.")
-
-```

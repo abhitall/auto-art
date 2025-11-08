@@ -2,7 +2,11 @@
 Main Flask application for the AutoART REST API.
 """
 from flask import Flask, request, jsonify
-import sys # For printing to stderr if needed
+from functools import wraps
+import os
+import sys
+import logging
+from datetime import datetime
 
 # Placeholder: In a real app, you'd import your core AutoART modules here
 # from ...core.evaluation.art_evaluator import ARTEvaluator
@@ -14,12 +18,89 @@ import sys # For printing to stderr if needed
 
 app = Flask(__name__)
 
+# Security Configuration
+app.config['DEBUG'] = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(32))
+app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_CONTENT_LENGTH', 16 * 1024 * 1024))  # 16MB default
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Simple rate limiting dictionary (for production, use Flask-Limiter or Redis)
+request_counts = {}
+RATE_LIMIT_WINDOW = 60  # seconds
+RATE_LIMIT_MAX_REQUESTS = 60  # requests per window
+
+def check_rate_limit(client_id: str) -> bool:
+    """
+    Simple in-memory rate limiting. For production, use Redis or Flask-Limiter.
+
+    Args:
+        client_id: Identifier for the client (IP address or API key)
+
+    Returns:
+        True if request is allowed, False if rate limit exceeded
+    """
+    current_time = datetime.now().timestamp()
+
+    if client_id not in request_counts:
+        request_counts[client_id] = []
+
+    # Remove old requests outside the window
+    request_counts[client_id] = [
+        req_time for req_time in request_counts[client_id]
+        if current_time - req_time < RATE_LIMIT_WINDOW
+    ]
+
+    # Check if limit exceeded
+    if len(request_counts[client_id]) >= RATE_LIMIT_MAX_REQUESTS:
+        return False
+
+    # Add current request
+    request_counts[client_id].append(current_time)
+    return True
+
+def rate_limit(f):
+    """Decorator to apply rate limiting to endpoints."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        client_id = request.remote_addr
+
+        if not check_rate_limit(client_id):
+            logger.warning(f"Rate limit exceeded for client: {client_id}")
+            return jsonify({
+                "error": "Rate limit exceeded. Please try again later.",
+                "retry_after": RATE_LIMIT_WINDOW
+            }), 429
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses."""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
+
 @app.route('/status', methods=['GET'])
+@rate_limit
 def get_status():
     """Returns the status of the API."""
+    logger.info("Status endpoint accessed")
     return jsonify({"status": "AutoART API is running", "version": "0.1.0-alpha"})
 
 @app.route('/evaluate_model', methods=['POST'])
+@rate_limit
 def evaluate_model_endpoint():
     """
     Endpoint to submit a model for evaluation.
@@ -117,4 +198,12 @@ if __name__ == '__main__':
     # Note: For development, use app.run(). For production, use a WSGI server like Gunicorn.
     # Example: flask run --host=0.0.0.0 --port=5000
     # Or in code:
-    app.run(host='0.0.0.0', port=5000, debug=True) # debug=True for development only
+    # Use environment variables for configuration
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')  # Default to localhost for security
+    port = int(os.environ.get('FLASK_PORT', 5000))
+    debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+
+    logger.info(f"Starting AutoART API on {host}:{port} (debug={debug})")
+    logger.warning("For production deployment, use a WSGI server like Gunicorn or uWSGI")
+
+    app.run(host=host, port=port, debug=debug)

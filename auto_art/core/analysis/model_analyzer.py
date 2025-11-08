@@ -14,6 +14,67 @@ import sys
 # print("Initializing model_analyzer.py (refactored v2)", file=sys.stderr)
 
 
+class ModelAnalyzer:
+    """
+    Analyzer class for extracting metadata and analyzing ML model properties.
+    Provides a high-level interface for model analysis operations.
+    """
+
+    def analyze(self, model_obj: Any, handler: Any) -> ModelMetadata:
+        """
+        Analyzes a model using the provided handler.
+
+        Args:
+            model_obj: The model instance to analyze.
+            handler: Model handler instance with analysis methods.
+
+        Returns:
+            ModelMetadata object containing analysis results.
+        """
+        try:
+            # Extract framework from handler
+            framework_name = handler.get_framework() if hasattr(handler, 'get_framework') else 'unknown'
+
+            # Use the handler to extract metadata
+            metadata_dict = {
+                'model_type': handler.get_model_type() if hasattr(handler, 'get_model_type') else 'unknown',
+                'framework': framework_name,
+                'input_shape': handler.get_input_shape() if hasattr(handler, 'get_input_shape') else None,
+                'output_shape': handler.get_output_shape() if hasattr(handler, 'get_output_shape') else None,
+                'layer_info': handler.get_layer_info() if hasattr(handler, 'get_layer_info') else [],
+                'input_type': 'tensor',  # Default
+                'output_type': 'tensor',  # Default
+                'additional_info': {}
+            }
+
+            return ModelMetadata(**metadata_dict)
+        except Exception as e:
+            # Return fallback metadata on error
+            return ModelMetadata(
+                model_type='unknown',
+                framework='unknown',
+                input_shape=(0,),
+                output_shape=(0,),
+                input_type='unknown',
+                output_type='unknown',
+                layer_info=[],
+                additional_info={'error': f"Analysis failed: {str(e)}"}
+            )
+
+    def analyze_architecture(self, model_obj: Any, framework_name: str) -> ModelMetadata:
+        """
+        Analyzes model architecture directly using framework name.
+
+        Args:
+            model_obj: The model instance to analyze.
+            framework_name: Name of the framework (e.g., 'pytorch', 'tensorflow').
+
+        Returns:
+            ModelMetadata object containing architecture details.
+        """
+        return analyze_model_architecture(model_obj, framework_name)
+
+
 def analyze_model_architecture(model_obj: Any, framework_name: str) -> ModelMetadata:
     """
     Analyzes a loaded model object to determine its architecture and metadata.

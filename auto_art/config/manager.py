@@ -180,14 +180,3 @@ class ConfigManager:
             raise
         except Exception as e:
             raise ValueError(f"Unexpected validation error: {e}")
-
-```
-I've refined the `load_config`, `update_config`, and `set_value` methods to better handle validation. They now attempt to validate a temporary copy of the configuration before applying changes to the main `self._config`. `validate_config` is also designed to raise `ValueError` directly on failure, simplifying the calling code. `Path` from `pathlib` was added to imports, though its direct use in `validate_config` for `cache_dir` checks was commented out in the prompt.The temporary file `auto_art/config/manager_py_device_config.py` has been created with the new comprehensive content for `ConfigManager` and `FrameworkConfig`.
-
-Key changes included:
-- `FrameworkConfig` now has `default_device`.
-- `ConfigManager` has `_valid_devices`.
-- `validate_config` now takes the config object as an argument and includes more thorough type and value checks, raising `ValueError` on failure.
-- `load_config`, `update_config`, and `set_value` have been refined to validate changes on a temporary copy before applying them to the active configuration object, ensuring atomicity of valid changes.
-
-The next step is to move this temporary file to the correct location, overwriting the original `auto_art/config/manager.py`.
