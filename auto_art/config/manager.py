@@ -315,7 +315,6 @@ class ConfigManager:
         if cfg.cache_dir is not None:
             if not isinstance(cfg.cache_dir, str):
                 raise ValueError("cache_dir must be a string path or None")
-            # Optionally, try to create Path(cfg.cache_dir) to validate path format
             try:
                 Path(cfg.cache_dir)
             except Exception as e:
@@ -327,7 +326,3 @@ class ConfigManager:
             raise ValueError("save_results must be a boolean")
         if not isinstance(cfg.output_dir, str):
             raise ValueError("output_dir must be a string")
-
-    # For direct access if needed, though property is preferred.
-    # def get_config_object(self) -> FrameworkConfig:
-    #     return self.config
