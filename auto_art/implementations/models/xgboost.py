@@ -29,19 +29,34 @@ class XGBoostModel(BaseModel[T]):
     def load_model(self, model_path: str) -> Tuple[Any, str]:
         """Loads an XGBoost model from the specified path.
 
-        Note: This method is not yet implemented.
+        Supports both native Booster models and sklearn-wrapper models
+        saved via joblib/pickle (.pkl, .bin) or native format (.json, .ubj, .model).
 
         Args:
             model_path: Path to the XGBoost model file.
 
-        Raises:
-            NotImplementedError: This feature is not yet available.
-
         Returns:
             A tuple containing the loaded model object and the framework name ('xgboost').
         """
-        # TODO: Implement actual model loading for XGBoost
-        raise NotImplementedError("XGBoost model loading is not yet implemented.")
+        import xgboost as xgb
+        from pathlib import Path
+
+        path = Path(model_path)
+        if not path.exists():
+            raise FileNotFoundError(f"XGBoost model file not found: {model_path}")
+
+        ext = path.suffix.lower()
+        if ext in {'.json', '.ubj', '.model', '.txt'}:
+            model = xgb.Booster()
+            model.load_model(model_path)
+        elif ext in {'.pkl', '.bin'}:
+            import joblib
+            model = joblib.load(model_path)
+        else:
+            raise ValueError(f"Unsupported XGBoost model file extension: {ext}. "
+                             f"Supported: {self.supported_extensions}")
+
+        return model, 'xgboost'
 
     def analyze_architecture(self, model: Any, framework: str) -> ModelMetadata:
         """Analyzes the architecture of a loaded XGBoost model.
@@ -128,17 +143,27 @@ class XGBoostModel(BaseModel[T]):
     def get_model_predictions(self, model: Any, data: T) -> T:
         """Gets predictions from the XGBoost model for the given data.
 
-        Note: This method is not yet implemented.
+        Handles both native Booster and sklearn-wrapper models.
 
         Args:
             model: The loaded XGBoost model instance.
-            data: The input data for which to get predictions.
-
-        Raises:
-            NotImplementedError: This feature is not yet available.
+            data: The input data (numpy array).
 
         Returns:
-            The model's predictions.
+            The model's predictions as a numpy array.
         """
-        # TODO: Implement actual model prediction for XGBoost
-        raise NotImplementedError("XGBoost model prediction is not yet implemented.")
+        import xgboost as xgb
+
+        input_data = self.preprocess_input(data)
+
+        if isinstance(model, xgb.Booster):
+            dmatrix = xgb.DMatrix(input_data)
+            predictions = model.predict(dmatrix)
+        elif hasattr(model, 'predict_proba'):
+            predictions = model.predict_proba(input_data)
+        elif hasattr(model, 'predict'):
+            predictions = model.predict(input_data)
+        else:
+            raise ValueError(f"Unsupported XGBoost model type: {type(model)}")
+
+        return np.asarray(predictions)

@@ -73,27 +73,19 @@ def test_fgsm_wrapper_generate_with_y(art_classifier, attack_params_fgsm):
     x_adv = wrapper.generate(x_test, y=y_target)
 
     wrapper.attack.generate.assert_called_once()
-    called_args, called_kwargs = wrapper.attack.generate.call_args
-    assert np.array_equal(called_args[0], x_test) # x
-    assert np.array_equal(called_kwargs.get('y'), y_target) # y
+    _, called_kwargs = wrapper.attack.generate.call_args
+    assert np.array_equal(called_kwargs.get('x'), x_test)
+    assert np.array_equal(called_kwargs.get('y'), y_target)
 
     assert isinstance(x_adv, np.ndarray)
     assert x_adv.shape == (5, 10)
 
 def test_fgsm_wrapper_invalid_params(art_classifier):
-    with pytest.raises(TypeError): # Example: if required param 'eps' is missing from ART's perspective
-        # Assuming FastGradientMethodWrapper passes params directly and ART's FGSM needs 'eps'
-        FastGradientMethodWrapper(art_classifier, {"eps_step": 0.01, "minimal": False, "summary_writer": False})
-
-    with pytest.raises(ValueError): # Example: if 'eps' is negative (ART's FGSM validation)
+    # ART's FGSM has a default for eps, so missing eps does not raise TypeError.
+    # However, negative eps raises ValueError.
+    with pytest.raises(ValueError):
         FastGradientMethodWrapper(art_classifier, {"eps": -0.1, "eps_step": 0.01, "minimal": False, "summary_writer": False})
 
-# Note: The actual exceptions (TypeError, ValueError) and conditions depend on
-# ART's FastGradientMethod's validation, as the wrapper passes params through.
-# The wrapper itself might not add much validation beyond what ART provides.
-# The ValueError for negative eps is a common check in ART attacks.
-# The TypeError for missing 'eps' depends on ART's specific __init__ for FastGradientMethod.
-# If ART's FGSM has a default for 'eps', TypeError might not be raised.
-# For this test, we assume 'eps' is mandatory for ART's FGSM for demonstration.
-# If the wrapper has its own validation, this test would target that.
-# Based on current FastGradientMethodWrapper, it passes params directly.
+    # Non-classifier estimator should raise TypeError from our wrapper
+    with pytest.raises(TypeError):
+        FastGradientMethodWrapper("not_a_classifier", {"eps": 0.1})

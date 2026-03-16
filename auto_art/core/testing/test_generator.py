@@ -303,7 +303,7 @@ class TestDataGenerator(BaseTestGenerator): # Inherit from BaseTestGenerator
         actual_input_shape = metadata.input_shape
         if actual_input_shape and actual_input_shape[0] is None and len(actual_input_shape) > 1:
             actual_input_shape = actual_input_shape[1:]
-        elif not actual_input_shape or not all(isinstance(d, int) and d > 0 for d in actual_input_shape): # type: ignore
+        if not actual_input_shape or not all(isinstance(d, int) and d > 0 for d in actual_input_shape): # type: ignore
              raise ValueError("Cannot generate image data without valid concrete input_shape in ModelMetadata.")
 
         final_shape = (num_samples,) + actual_input_shape

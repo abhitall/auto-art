@@ -529,6 +529,15 @@ class ARTEvaluator(BaseEvaluator, EvaluatorInterface): # type: ignore
             self.logger.error(f"Attack {attack_strategy.attack_name} execution failed: {str(e)}", exc_info=True)
             return {'error': str(e), 'success_rate': np.nan, 'perturbation_size': np.nan}
 
+    def calculate_metrics(self, clean_data: Any, adversarial_data: Any,
+                         expected_outputs: Any) -> Dict[str, float]:
+        """Calculate evaluation metrics comparing clean and adversarial data."""
+        metrics: Dict[str, float] = {}
+        if self.metrics_calculator is not None:
+            basic = self.metrics_calculator.calculate_basic_metrics(clean_data, adversarial_data, expected_outputs)
+            metrics.update(basic)
+        return metrics
+
     def generate_report(self, result: EvaluationResult) -> str:
         """Generates a human-readable string report from an EvaluationResult.
 
@@ -588,7 +597,7 @@ class ARTEvaluator(BaseEvaluator, EvaluatorInterface): # type: ignore
             report_lines.append("  No defences evaluated.")
         else:
             for defence_name, defence_data_dict in defences_data.items():
-                    report_lines.append(f"  Defence: {defence_name}")
+                report_lines.append(f"  Defence: {defence_name}")
                 if 'error' in defence_data_dict:
                     report_lines.append(f"    - Status: Failed ({defence_data_dict['error']})")
                 else:

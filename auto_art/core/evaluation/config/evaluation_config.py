@@ -20,7 +20,6 @@ class Framework(Enum):
     TENSORFLOW = "tensorflow"
     KERAS = "keras"
     SKLEARN = "sklearn"
-    MXNET = "mxnet"
     XGBOOST = "xgboost"
     LIGHTGBM = "lightgbm"
     CATBOOST = "catboost"

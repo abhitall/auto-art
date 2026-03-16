@@ -1,12 +1,9 @@
 """
 Data generator module for creating test inputs based on model type.
 """
-import sys
 import numpy as np
 from typing import Dict, Any, Tuple, List, Optional, Union
 from dataclasses import dataclass
-
-print("Starting data_generator.py initialization", file=sys.stderr)
 
 # Only import frameworks when needed, not at module level
 _FRAMEWORKS = {
@@ -31,7 +28,7 @@ def _import_framework(name: str):
             from transformers import AutoModel, AutoTokenizer
             _FRAMEWORKS['transformers'] = (AutoModel, AutoTokenizer)
     except ImportError:
-        print(f"Failed to import {name}", file=sys.stderr)
+        pass
     
     return _FRAMEWORKS.get(name)
 
@@ -42,19 +39,14 @@ class TestData:
     expected_outputs: Optional[np.ndarray] = None
     metadata: Optional[Dict[str, Any]] = None
 
-print("TestData class defined", file=sys.stderr)
-
 class DataGenerator:
     """Generates appropriate test data based on model type and input requirements."""
     
     def __init__(self):
-        print("Initializing DataGenerator", file=sys.stderr)
         self.supported_input_types = ['image', 'text', 'multimodal']
 
     def generate_data(self, metadata: Any, num_samples: int = 100) -> TestData:
         """Generates test data appropriate for the model type and input format."""
-        print(f"Generating {metadata.input_type} data", file=sys.stderr)
-        
         # Validate input parameters
         if num_samples <= 0:
             raise ValueError(f"Number of samples must be positive, got {num_samples}")

@@ -2,7 +2,7 @@
 Factory for creating ART classifiers.
 """
 
-from typing import Any, Dict, Optional, Type, Callable
+from typing import Any, Dict, Optional, Tuple, Type, Callable
 import torch
 import torch.nn as nn
 
@@ -16,7 +16,7 @@ from art.estimators.classification.scikitlearn import ScikitlearnClassifier
 from art.estimators.object_detection import PyTorchObjectDetector
 
 # Local Imports
-from ...config.manager import ConfigManager
+from ....config.manager import ConfigManager
 from ..config.evaluation_config import ModelType, Framework
 import sys # For printing warnings if needed (commented out for now)
 
@@ -147,13 +147,18 @@ class ClassifierFactory:
         if 'input_shape' not in kwargs or 'nb_classes' not in kwargs:
             raise ValueError("PyTorchClassifier requires 'input_shape' and 'nb_classes' in kwargs.")
 
+        input_shape = kwargs.pop('input_shape')
+        nb_classes = kwargs.pop('nb_classes')
+        optimizer = kwargs.pop('optimizer', None)
+        clip_values = kwargs.pop('clip_values', (0.0, 1.0))
+
         return PyTorchClassifier(
             model=model,
             loss=loss_function,
-            input_shape=kwargs.get('input_shape'),
-            nb_classes=kwargs.get('nb_classes'),
-            optimizer=kwargs.get('optimizer'),
-            clip_values=kwargs.get('clip_values', (0.0, 1.0)),
+            input_shape=input_shape,
+            nb_classes=nb_classes,
+            optimizer=optimizer,
+            clip_values=clip_values,
             device_type=device_to_use,
             **kwargs # Pass remaining kwargs like channels_first, preprocessing_defences etc.
         )
@@ -166,11 +171,15 @@ class ClassifierFactory:
         device_to_use = kwargs.pop('device_type', 'cpu')
         # PyTorchObjectDetector in ART 1.x does not take input_shape, nb_classes directly.
         # It infers them or they are implicit.
+        clip_values = kwargs.pop('clip_values', (0.0, 1.0))
+        channels_first = kwargs.pop('channels_first', True)
+        attack_losses = kwargs.pop('attack_losses', ('loss_classifier', 'loss_box_reg', 'loss_objectness', 'loss_rpn_box_reg'))
+
         return PyTorchObjectDetector(
             model=model,
-            clip_values=kwargs.get('clip_values', (0.0, 1.0)),
-            channels_first=kwargs.get('channels_first', True),
-            attack_losses=kwargs.get('attack_losses', ('loss_classifier', 'loss_box_reg', 'loss_objectness', 'loss_rpn_box_reg')),
+            clip_values=clip_values,
+            channels_first=channels_first,
+            attack_losses=attack_losses,
             device_type=device_to_use,
             **kwargs # Pass remaining kwargs
         )
@@ -187,14 +196,19 @@ class ClassifierFactory:
         if 'input_shape' not in kwargs or 'nb_classes' not in kwargs:
             raise ValueError("TensorFlowV2Classifier requires 'input_shape' and 'nb_classes' in kwargs.")
 
+        nb_classes = kwargs.pop('nb_classes')
+        input_shape = kwargs.pop('input_shape')
+        loss_object = kwargs.pop('loss_object', None)
+        optimizer = kwargs.pop('optimizer', None)
+        clip_values = kwargs.pop('clip_values', (0.0, 1.0))
+
         return TensorFlowV2Classifier(
             model=model,
-            nb_classes=kwargs.get('nb_classes'),
-            input_shape=kwargs.get('input_shape'),
-            loss_object=kwargs.get('loss_object'),
-            optimizer=kwargs.get('optimizer'),
-            clip_values=kwargs.get('clip_values', (0.0, 1.0)),
-            # device_type is not a direct arg for TensorFlowV2Classifier constructor
+            nb_classes=nb_classes,
+            input_shape=input_shape,
+            loss_object=loss_object,
+            optimizer=optimizer,
+            clip_values=clip_values,
             **kwargs # Pass remaining kwargs
         )
 
@@ -206,11 +220,15 @@ class ClassifierFactory:
         kwargs.pop('device_type', None) # KerasClassifier doesn't use it
         # if resolved_device_type == 'gpu':
             # print("Note: Keras device placement follows TensorFlow backend.", file=sys.stderr)
+        clip_values = kwargs.pop('clip_values', (0.0, 1.0))
+        use_logits = kwargs.pop('use_logits', False)
+        channels_first = kwargs.pop('channels_first', None)
+
         return KerasClassifier(
             model=model,
-            clip_values=kwargs.get('clip_values', (0.0, 1.0)),
-            use_logits=kwargs.get('use_logits', False),
-            channels_first=kwargs.get('channels_first'),
+            clip_values=clip_values,
+            use_logits=use_logits,
+            channels_first=channels_first,
             **kwargs # Pass remaining kwargs
         )
 
@@ -223,24 +241,10 @@ class ClassifierFactory:
         if resolved_device_type == 'gpu':
             # print("Warning: ScikitlearnClassifier runs on CPU. 'gpu' device request ignored.", file=sys.stderr)
             pass
+        clip_values = kwargs.pop('clip_values', (0.0, 1.0))
+
         return ScikitlearnClassifier(
             model=model,
-            clip_values=kwargs.get('clip_values', (0.0, 1.0)),
+            clip_values=clip_values,
             **kwargs # Pass remaining kwargs like preprocessing, postprocessing
         )
-```
-The `_determine_actual_device` method was slightly refined to handle `requested_device` being `None` or empty string by defaulting to `cfg.default_device` or "auto". The creator methods now explicitly pop `device_type` and `loss_fn` (for PyTorch) to avoid passing them twice if they are also in `**kwargs`, and raise `ValueError` if essential parameters like `input_shape` or `nb_classes` are missing.The temporary file `auto_art/core/evaluation/factories/classifier_factory_py_device.py` has been created with the new content for `ClassifierFactory`.
-
-Key changes included:
-- Addition of `ConfigManager` import.
-- Conditional import of `tensorflow` for GPU availability checks.
-- New `_determine_actual_device` static method to resolve 'cpu' or 'gpu' based on user request, global config, and hardware availability.
-- `create_classifier` method updated to take an optional `device_type` argument, call `_determine_actual_device`, and pass the resolved device to specific creator methods via `kwargs`.
-- Specific creator methods (`_create_pytorch_classifier`, `_create_tensorflow_classifier`, etc.) updated to:
-    - Accept `device_type` from `kwargs`.
-    - Pass `device_type` to `PyTorchClassifier` and `PyTorchObjectDetector` constructors.
-    - Note that TensorFlow/Keras ART classifiers manage devices internally, so `device_type` is not passed to them.
-    - Scikit-learn runs on CPU, so `device_type='gpu'` is informational but ignored.
-    - Essential kwargs like `input_shape` and `nb_classes` are now explicitly checked in PyTorch and TensorFlow/Keras creators.
-
-The next step is to move this temporary file to the correct location, overwriting the original `auto_art/core/evaluation/factories/classifier_factory.py`.

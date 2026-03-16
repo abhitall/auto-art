@@ -60,7 +60,7 @@ def test_config_manager_default_config():
     ConfigManager._instance = None # type: ignore
 
 
-def test_config_manager_update_and_set_value():
+def test_config_manager_update_and_set_setting():
     ConfigManager._instance = None # type: ignore
     cm = ConfigManager()
     # cm.reset_config() # Not strictly needed due to fresh instance
@@ -69,9 +69,9 @@ def test_config_manager_update_and_set_value():
     assert cm.config.default_batch_size == 64
     assert cm.config.log_level == "DEBUG"
 
-    cm.set_value("default_num_samples", 200)
+    cm.set_setting("default_num_samples", 200)
     assert cm.config.default_num_samples == 200
-    cm.set_value("use_gpu", False)
+    cm.set_setting("use_gpu", False)
     assert cm.config.use_gpu is False
 
     ConfigManager._instance = None # type: ignore
@@ -82,21 +82,21 @@ def test_config_manager_validation():
     cm = ConfigManager()
 
     with pytest.raises(ValueError, match="log_level must be one of"):
-        cm.set_value("log_level", "INVALID_LEVEL_FOR_TEST") # Made value more unique
+        cm.set_setting("log_level", "INVALID_LEVEL_FOR_TEST") # Made value more unique
 
     with pytest.raises(ValueError, match="default_device must be one of"):
-        cm.set_value("default_device", "tpu_device_test_unique")
+        cm.set_setting("default_device", "tpu_device_test_unique")
 
     with pytest.raises(ValueError, match="default_batch_size must be a positive integer"):
-        cm.set_value("default_batch_size", -10)
+        cm.set_setting("default_batch_size", -10)
 
     with pytest.raises(ValueError, match="use_gpu must be a boolean"):
-        cm.set_value("use_gpu", "not_a_bool_string_unique")
+        cm.set_setting("use_gpu", "not_a_bool_string_unique")
 
     with pytest.raises(ValueError, match="Unknown configuration key: unknown_key_test_unique"):
-        cm.set_value("unknown_key_test_unique", "some_value")
+        cm.set_setting("unknown_key_test_unique", "some_value")
 
-    with pytest.raises(ValueError, match="Unknown configuration keys: another_unknown_key_test_unique"):
+    with pytest.raises(ValueError, match="Unknown configuration keys provided for update: another_unknown_key_test_unique"):
         cm.update_config(another_unknown_key_test_unique="test")
 
     ConfigManager._instance = None # type: ignore
@@ -190,22 +190,3 @@ def test_config_manager_reset_restores_defaults():
     assert cm.config.use_gpu == default_cfg.use_gpu
     assert cm.config.default_device == default_cfg.default_device
     ConfigManager._instance = None # type: ignore
-
-```
-I've made some adjustments to the singleton test to correctly test the singleton behavior and then reset `_instance` for other tests. Also, made test values more unique to avoid accidental matches in error messages if tests were run in a different order or if error messages were similar.
-The `mocker` fixture is not actually used in the revised singleton test, as direct manipulation of `_instance` achieves the isolation for that specific test. The `mocker` import can be removed if not used elsewhere. For now, I'll keep it as it was in the prompt. The key for test isolation with this singleton pattern is `ConfigManager._instance = None` at the start of each test function that needs a truly fresh `ConfigManager` state.The file `tests/unit/test_config_manager.py` has been successfully created with the provided pytest test suite.
-
-**Key aspects of the created test file:**
--   Imports `pytest`, `json`, `os`, `Path`, and the necessary components from `auto_art.config.manager`.
--   Includes tests for:
-    -   Singleton behavior of `ConfigManager` (with manual resetting of `_instance` for test isolation).
-    -   Verification of default configuration values.
-    -   Functionality of `update_config` and `set_value`.
-    -   Configuration validation, checking for `ValueError` with invalid inputs.
-    -   Saving and loading configuration to/from JSON files, using the `tmp_path` pytest fixture for temporary file creation.
-    -   Error handling for loading non-existent or malformed JSON files.
-    -   Error handling for loading configuration files that contain values failing validation rules.
-    -   Functionality of `reset_config` to restore default settings.
--   The tests make use of `ConfigManager._instance = None` to ensure a fresh state for the singleton where necessary, which is a common pattern for testing singletons that don't have a public reset method for their instance.
-
-The subtask is complete. I will now submit the report.

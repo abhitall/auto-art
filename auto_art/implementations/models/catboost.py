@@ -29,19 +29,39 @@ class CatBoostModel(BaseModel[T]):
     def load_model(self, model_path: str) -> Tuple[Any, str]:
         """Loads a CatBoost model from the specified path.
 
-        Note: This method is not yet implemented.
+        Supports native CatBoost format (.cbm) and sklearn-wrapper models
+        saved via joblib/pickle (.pkl, .bin). Also supports ONNX (.onnx) and JSON (.json).
 
         Args:
             model_path: Path to the CatBoost model file.
 
-        Raises:
-            NotImplementedError: This feature is not yet available.
-
         Returns:
             A tuple containing the loaded model object and the framework name ('catboost').
         """
-        # TODO: Implement actual model loading for CatBoost
-        raise NotImplementedError("CatBoost model loading is not yet implemented.")
+        from catboost import CatBoostClassifier, CatBoostRegressor
+        from pathlib import Path
+
+        path = Path(model_path)
+        if not path.exists():
+            raise FileNotFoundError(f"CatBoost model file not found: {model_path}")
+
+        ext = path.suffix.lower()
+        if ext in {'.cbm', '.json'}:
+            # Try classifier first, fall back to regressor
+            try:
+                model = CatBoostClassifier()
+                model.load_model(model_path)
+            except Exception:
+                model = CatBoostRegressor()
+                model.load_model(model_path)
+        elif ext in {'.pkl', '.bin'}:
+            import joblib
+            model = joblib.load(model_path)
+        else:
+            raise ValueError(f"Unsupported CatBoost model file extension: {ext}. "
+                             f"Supported: {self.supported_extensions}")
+
+        return model, 'catboost'
 
     def analyze_architecture(self, model: Any, framework: str) -> ModelMetadata:
         """Analyzes the architecture of a loaded CatBoost model.
@@ -124,17 +144,20 @@ class CatBoostModel(BaseModel[T]):
     def get_model_predictions(self, model: Any, data: T) -> T:
         """Gets predictions from the CatBoost model for the given data.
 
-        Note: This method is not yet implemented.
-
         Args:
             model: The loaded CatBoost model instance.
-            data: The input data for which to get predictions.
-
-        Raises:
-            NotImplementedError: This feature is not yet available.
+            data: The input data (numpy array).
 
         Returns:
-            The model's predictions.
+            The model's predictions as a numpy array.
         """
-        # TODO: Implement actual model prediction for CatBoost
-        raise NotImplementedError("CatBoost model prediction is not yet implemented.")
+        input_data = self.preprocess_input(data)
+
+        if hasattr(model, 'predict_proba'):
+            predictions = model.predict_proba(input_data)
+        elif hasattr(model, 'predict'):
+            predictions = model.predict(input_data)
+        else:
+            raise ValueError(f"Unsupported CatBoost model type: {type(model)}")
+
+        return np.asarray(predictions)

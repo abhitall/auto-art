@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 # from auto_art.core.attacks.poisoning.clean_label_attack import CleanLabelAttackWrapper
 # For now, let's assume a specific wrapper for an ART poisoning attack.
 # We'll use PoisoningAttackCleanLabel as an example.
-from art.attacks.poisoning import PoisoningAttackCleanLabel
+from art.attacks.poisoning import PoisoningAttackCleanLabelBackdoor as PoisoningAttackCleanLabel
 from art.estimators.classification import PyTorchClassifier # Example ART estimator
 import numpy as np
 import torch
@@ -89,7 +89,7 @@ def clean_label_attack_params():
 # Let's proceed by trying to use the ART attack directly within a test structure
 # that *would* apply to a wrapper, and use patching to simulate the wrapper's existence.
 
-@patch('art.attacks.poisoning.PoisoningAttackCleanLabel') # Patch the ART attack
+@patch('art.attacks.poisoning.PoisoningAttackCleanLabelBackdoor') # Patch the ART attack
 def test_poisoning_wrapper_instantiation_and_generate(
     MockArtCleanLabelAttack, # This is the patched class
     art_classifier_for_poisoning,

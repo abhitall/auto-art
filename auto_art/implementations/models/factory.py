@@ -10,7 +10,6 @@ from .tensorflow import TensorFlowModel
 from .transformers import TransformersModel
 from .keras import KerasModel
 from .sklearn import SklearnModel
-from .mxnet import MXNetModel # Added
 from .xgboost import XGBoostModel # Added
 from .lightgbm import LightGBMModel # Added
 from .catboost import CatBoostModel # Added
@@ -25,7 +24,6 @@ class ModelFactory:
         'transformers': TransformersModel,
         'keras': KerasModel,
         'sklearn': SklearnModel,
-        'mxnet': MXNetModel, # Added
         'xgboost': XGBoostModel, # Added
         'lightgbm': LightGBMModel, # Added
         'catboost': CatBoostModel, # Added

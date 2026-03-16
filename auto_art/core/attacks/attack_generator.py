@@ -7,10 +7,17 @@ from typing import Dict, Any, List, Optional, Tuple
 import sys
 
 from art.attacks.evasion import FastGradientMethod, ProjectedGradientDescent, DeepFool
-from art.attacks.inference import ModelInversion as ARTModelInversion
-from art.estimators.classification import PyTorchClassifier, TensorFlowClassifier # Keep for type checks, but factory will create
-from art.estimators.generation import PyTorchGenerator
-from art.estimators.regression import PyTorchRegressor, TensorFlowRegressor, KerasRegressor
+from art.attacks.inference.model_inversion import MIFace as ARTModelInversion
+from art.estimators.classification import PyTorchClassifier, TensorFlowV2Classifier as TensorFlowClassifier # Keep for type checks
+try:
+    from art.estimators.generation import PyTorchGenerator
+except ImportError:
+    PyTorchGenerator = None  # Not available in this ART version
+from art.estimators.regression import PyTorchRegressor, KerasRegressor
+try:
+    from art.estimators.regression import TensorFlowRegressor
+except ImportError:
+    TensorFlowRegressor = None  # Not available in this ART version
 # ClassifierNeuralNetwork will be imported conditionally where needed
 
 from ...core.base import ModelMetadata

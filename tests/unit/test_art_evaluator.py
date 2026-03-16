@@ -1,12 +1,13 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 import numpy as np
 import torch # For dummy model
 
 from auto_art.core.evaluation.art_evaluator import ARTEvaluator, EvasionAttackStrategy, EvaluationMetrics
 from auto_art.core.evaluation.config.evaluation_config import EvaluationConfig, ModelType, Framework, EvaluationResult
+from auto_art.core.evaluation.defences.base import DefenceStrategy
 from auto_art.core.base import ModelMetadata
-from auto_art.core.testing.data_generator import TestData
+from auto_art.core.testing.test_generator import TestData
 
 # Minimal PyTorch model for testing
 class DummyTorchModel(torch.nn.Module):
@@ -65,26 +66,22 @@ def mock_defence_strategy():
     return defence
 
 @pytest.fixture
-@patch('auto_art.core.evaluation.metrics.calculator.MetricsCalculator')
-def art_evaluator_instance(MockMetricsCalculator, mock_model_obj, mock_evaluation_config, mock_art_estimator):
-    # Patch the art_estimator property to return our mock_art_estimator
-    with patch.object(ARTEvaluator, 'art_estimator', new_callable=pytest.PropertyMock) as mock_art_estimator_prop:
-        mock_art_estimator_prop.return_value = mock_art_estimator
+def art_evaluator_instance(mock_model_obj, mock_evaluation_config, mock_art_estimator):
+    evaluator = ARTEvaluator(
+        model_obj=mock_model_obj,
+        config=mock_evaluation_config
+    )
+    # Directly set the cached estimator to our mock so the property returns it
+    evaluator._art_estimator_instance = mock_art_estimator
 
-        # Mock MetricsCalculator instance used by ARTEvaluator
-        mock_mc_instance = MockMetricsCalculator.return_value
-        mock_mc_instance.calculate_basic_metrics.return_value = {'accuracy': 0.9}
-        mock_mc_instance.calculate_robustness_metrics.return_value = {'empirical_robustness': 0.6}
-        mock_mc_instance.calculate_security_score.return_value = 75.0
-        mock_mc_instance.calculate_wasserstein_distance.return_value = 0.1
-
-        evaluator = ARTEvaluator(
-            model_obj=mock_model_obj,
-            config=mock_evaluation_config
-        )
-        # Replace the ARTEvaluator's _metrics_calculator with our controlled mock instance
-        evaluator._metrics_calculator = mock_mc_instance
-        return evaluator
+    # Create and configure mock MetricsCalculator
+    mock_mc_instance = MagicMock()
+    mock_mc_instance.calculate_basic_metrics.return_value = {'accuracy': 0.9}
+    mock_mc_instance.calculate_robustness_metrics.return_value = {'empirical_robustness': 0.6}
+    mock_mc_instance.calculate_security_score.return_value = 75.0
+    mock_mc_instance.calculate_wasserstein_distance.return_value = 0.1
+    evaluator._metrics_calculator = mock_mc_instance
+    return evaluator
 
 # Test for evaluate_model method
 def test_evaluate_model(art_evaluator_instance, mock_test_data_np, mock_evasion_attack_strategy, mock_defence_strategy, mock_art_estimator):
@@ -147,7 +144,7 @@ def test_generate_report(art_evaluator_instance):
 
 
 # Test for evaluate_robustness_from_path (high-level, mocking collaborators)
-@patch('auto_art.implementations.models.factory.ModelFactory')
+@patch('auto_art.core.evaluation.art_evaluator.ModelFactory')
 @patch('auto_art.core.evaluation.art_evaluator.analyze_model_architecture_utility')
 @patch('auto_art.core.evaluation.art_evaluator.TestDataGenerator')
 @patch('auto_art.core.evaluation.art_evaluator.AttackGenerator')
@@ -163,7 +160,8 @@ def test_evaluate_robustness_from_path(
         model_type=mock_evaluation_config.model_type.value,
         framework=mock_evaluation_config.framework.value,
         input_shape=(784,), output_shape=(2,),
-        input_type="tabular", output_type="classification"
+        input_type="tabular", output_type="classification",
+        layer_info=[]
     )
     MockAnalyzeArch.return_value = mock_model_metadata
 

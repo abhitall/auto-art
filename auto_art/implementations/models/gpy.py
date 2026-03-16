@@ -29,19 +29,36 @@ class GPyModel(BaseModel[T]):
     def load_model(self, model_path: str) -> Tuple[Any, str]:
         """Loads a GPy model from the specified path.
 
-        Note: This method is not yet implemented.
+        GPy models are typically serialized via pickle/joblib (.pkl) or
+        GPy's own JSON-based serialization (.json, .zip).
 
         Args:
-            model_path: Path to the GPy model file (likely a pickled file).
-
-        Raises:
-            NotImplementedError: This feature is not yet available.
+            model_path: Path to the GPy model file.
 
         Returns:
             A tuple containing the loaded model object and the framework name ('gpy').
         """
-        # TODO: Implement actual model loading for GPy models
-        raise NotImplementedError("GPy model loading is not yet implemented.")
+        from pathlib import Path
+        import json
+
+        path = Path(model_path)
+        if not path.exists():
+            raise FileNotFoundError(f"GPy model file not found: {model_path}")
+
+        ext = path.suffix.lower()
+        if ext == '.pkl':
+            import joblib
+            model = joblib.load(model_path)
+        elif ext in {'.json', '.zip'}:
+            import GPy
+            with open(model_path, 'r') as f:
+                model_dict = json.load(f)
+            model = GPy.core.Model.from_dict(model_dict)
+        else:
+            raise ValueError(f"Unsupported GPy model file extension: {ext}. "
+                             f"Supported: {self.supported_extensions}")
+
+        return model, 'gpy'
 
     def analyze_architecture(self, model: Any, framework: str) -> ModelMetadata:
         """Analyzes the architecture of a loaded GPy model.
@@ -139,19 +156,23 @@ class GPyModel(BaseModel[T]):
     def get_model_predictions(self, model: Any, data: T) -> T:
         """Gets predictions from the GPy model for the given data.
 
-        Note: This method is not yet implemented. GPy models typically predict
-        mean and variance, which needs specific handling for ART compatibility
-        as ART estimators often expect a single array of predictions (e.g., class
-        probabilities, regression values).
+        GPy models return (mean, variance) tuples. This method returns the
+        mean predictions for ART compatibility.
 
         Args:
             model: The loaded GPy model instance.
-            data: The input data for which to get predictions.
-
-        Raises:
-            NotImplementedError: This feature is not yet available.
+            data: The input data (numpy array).
 
         Returns:
-            The model's predictions.
+            The mean predictions as a numpy array.
         """
-        raise NotImplementedError("GPy model prediction for ART compatibility is not yet implemented (requires handling mean/variance output).")
+        input_data = self.preprocess_input(data)
+
+        if hasattr(model, 'predict'):
+            result = model.predict(input_data)
+            # GPy returns (mean, variance) tuple
+            if isinstance(result, tuple) and len(result) >= 1:
+                return np.asarray(result[0])
+            return np.asarray(result)
+        else:
+            raise ValueError(f"Unsupported GPy model type: {type(model)}")
