@@ -28,8 +28,9 @@ MANIFEST
 
 # Project specific
 output/
-output/logs/
 *.log
+auto_art_results/
+.auto_art/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -173,4 +174,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-.claude/settings.json
+.claude/
+.cursor/

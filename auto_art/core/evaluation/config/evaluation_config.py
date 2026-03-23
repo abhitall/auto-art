@@ -24,6 +24,7 @@ class Framework(Enum):
     LIGHTGBM = "lightgbm"
     CATBOOST = "catboost"
     GPY = "gpy"
+    TRANSFORMERS = "transformers"
 
 @dataclass(frozen=True)
 class EvaluationConfig:

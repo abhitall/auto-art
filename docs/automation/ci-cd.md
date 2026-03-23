@@ -76,3 +76,31 @@ assert rag_result.success_rate < 0.05
 ```
 
 If either assertion fails, the pipeline blocks deployment and reports the exact attack that succeeded.
+
+## SARIF Integration
+
+You can emit **SARIF 2.1.0** from the orchestrator and upload it to **GitHub Code Scanning** (GitLab SAST and Azure DevOps SARIF ingestion follow the same pattern: write the file in CI, attach it as an artifact, and register it with your platform’s scanner). The report’s `to_sarif()` maps phase results to SARIF rules and results so findings show up alongside other security tools.
+
+1. Run the orchestrated evaluation and write `results.sarif` to the workspace.
+2. Upload the file as a workflow artifact (optional but useful for debugging).
+3. Call `github/codeql-action/upload-sarif` with `security-events: write` on the job.
+
+Example GitHub Actions snippet:
+
+```yaml
+- name: Run Security Evaluation
+  run: |
+    python -c "
+    from auto_art.core.orchestrator import Orchestrator
+    orch = Orchestrator.from_yaml('eval_config.yaml')
+    report = orch.run()
+    with open('results.sarif', 'w') as f:
+        f.write(report.to_sarif())
+    orch.assert_gates(report)
+    "
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: results.sarif
+```
+
+Ensure the job sets `permissions: security-events: write` (and for private repos, typically `contents: read` and `actions: read`) so the upload step can publish results. See GitHub’s [upload SARIF](https://docs.github.com/en/code-security/code-scanning/integrating-with-code-scanning/uploading-a-sarif-file-to-github) documentation for `category`, matrix uploads, and compatibility notes.

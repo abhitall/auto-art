@@ -271,6 +271,8 @@ class MetricsCalculator:
 
         try:
             distance = wasserstein_distance(data_batch_1_flat, data_batch_2_flat)
+            if hasattr(distance, 'mean'):
+                return float(distance.mean())
             return float(distance)
         except ImportError as e:
             # SciPy not installed or import error

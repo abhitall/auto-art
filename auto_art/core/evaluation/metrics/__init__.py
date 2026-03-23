@@ -1,13 +1,17 @@
-# This file makes the 'metrics' directory a Python package.
-
 from .calculator import MetricsCalculator
-from .certification import (
-    compute_great_score,
-    RandomizedSmoothingCertifier,
-)
+from .rdi import RDICalculator, RDIReport
+from .multi_norm import MultiNormEvaluator, MultiNormReport, NormEvalResult
+from .privacy import PrivacyMetricsCalculator, PrivacyReport
+from .certification import RandomizedSmoothingCertifier
 
 __all__ = [
     "MetricsCalculator",
-    "compute_great_score",
+    "RDICalculator",
+    "RDIReport",
+    "MultiNormEvaluator",
+    "MultiNormReport",
+    "NormEvalResult",
+    "PrivacyMetricsCalculator",
+    "PrivacyReport",
     "RandomizedSmoothingCertifier",
 ]

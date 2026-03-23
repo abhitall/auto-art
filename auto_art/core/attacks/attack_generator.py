@@ -37,6 +37,8 @@ from .poisoning.backdoor_attack import BackdoorAttackWrapper
 from .poisoning.clean_label_attack import CleanLabelAttackWrapper
 from .poisoning.feature_collision_attack import FeatureCollisionAttackWrapper
 from .poisoning.gradient_matching_attack import GradientMatchingAttackWrapper
+from .poisoning.baddet import BadDetOGAWrapper, BadDetRMAWrapper, BadDetGMAWrapper, BadDetODAWrapper
+from .poisoning.dgm import DGMReDWrapper, DGMTrailWrapper
 
 # Extraction attack wrappers
 from .extraction.copycat_cnn import CopycatCNNWrapper
@@ -47,6 +49,13 @@ from .extraction.functionally_equivalent_extraction import FunctionallyEquivalen
 from .inference.membership_inference import MembershipInferenceBlackBoxWrapper
 from .inference.attribute_inference import AttributeInferenceBlackBoxWrapper
 from .inference.model_inversion import MIFaceWrapper
+from .inference.label_only import LabelOnlyBoundaryDistanceWrapper, LabelOnlyGapAttackWrapper
+from .inference.attribute_inference_wb import AttributeInferenceWhiteBoxDTWrapper, AttributeInferenceWhiteBoxLifestyleDTWrapper
+from .inference.db_reconstruction import DatabaseReconstructionWrapper
+
+# Audio attack wrappers
+from .audio.carlini_wagner_audio import CarliniWagnerAudioWrapper
+from .audio.imperceptible_asr import ImperceptibleASRWrapper
 
 # LLM attack wrappers
 from .llm.hotflip import HotFlipWrapper
@@ -68,12 +77,37 @@ class AttackGenerator:
                 'fgsm', 'pgd', 'deepfool', 'autoattack',
                 'carlini_wagner_l2', 'boundary_attack',
                 'square_attack', 'hopskipjump', 'simba',
+                'bim', 'auto_pgd', 'adversarial_patch',
+                'elastic_net', 'jsma', 'newtonfool',
+                'universal_perturbation', 'zoo',
+                'shadow_attack', 'wasserstein',
+                'decision_tree_attack', 'brendel_bethge',
+                'pixel_attack', 'threshold_attack',
+                'spatial_transformation', 'feature_adversaries',
+                'composite', 'geoda', 'overload',
+                'sign_opt', 'lowprofool', 'virtual_adversarial',
+                'auto_conjugate_gradient', 'laser_attack',
+                'high_confidence_low_uncertainty',
+                'graphite_blackbox', 'graphite_whitebox',
+                'adversarial_texture', 'dpatch', 'robust_dpatch',
+                'frame_saliency', 'shapeshifter',
             ],
-            'poisoning': ['backdoor', 'clean_label', 'feature_collision', 'gradient_matching'],
+            'poisoning': [
+                'backdoor', 'clean_label', 'feature_collision', 'gradient_matching',
+                'baddet_oga', 'baddet_rma', 'baddet_gma', 'baddet_oda',
+                'dgm_red', 'dgm_trail',
+                'sleeper_agent', 'hidden_trigger', 'bullseye_polytope',
+            ],
             'extraction': ['copycat_cnn', 'knockoff_nets', 'functionally_equivalent_extraction'],
-            'inference': ['membership_inference_bb', 'attribute_inference_bb', 'model_inversion_miface'],
-            'regression': ['fgsm', 'pgd'],
-            'generator': ['inversion'], # ART's ModelInversion (targets a classifier usually)
+            'inference': [
+                'membership_inference_bb', 'attribute_inference_bb', 'model_inversion_miface',
+                'label_only_boundary', 'label_only_gap',
+                'attribute_inference_wb_dt', 'attribute_inference_wb_lifestyle',
+                'db_reconstruction',
+            ],
+            'regression': ['fgsm', 'pgd', 'bim'],
+            'generator': ['inversion'],
+            'audio': ['carlini_wagner_audio', 'imperceptible_asr'],
             'llm': ['hotflip']
         }
 
@@ -176,6 +210,10 @@ class AttackGenerator:
             if model is None: # Model is the target classifier (ART estimator)
                  raise ValueError("Target classifier (as ART estimator) is required for ModelInversion attack.")
             return self._create_generator_attack(model, metadata, config)
+        elif attack_category == 'audio':
+            if model is None:
+                raise ValueError("Model (ART estimator) is required for audio attacks.")
+            return self._create_audio_attack(model, config)
         elif attack_category == 'llm':
             if model is None or metadata is None:
                  raise ValueError(f"LLM attack type '{attack_type_lower}' requires a model and its metadata.")
@@ -246,6 +284,290 @@ class AttackGenerator:
                 max_iter=config.max_iter, epsilon=config.epsilon,
                 batch_size=config.batch_size, verbose=params.get('verbose', True),
             ).attack
+        elif attack_type_lower == 'bim':
+            from .evasion.bim import BasicIterativeMethodWrapper
+            return BasicIterativeMethodWrapper(
+                estimator=classifier, eps=config.epsilon, eps_step=config.eps_step,
+                max_iter=config.max_iter, targeted=config.targeted,
+                batch_size=config.batch_size, verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'auto_pgd':
+            from .evasion.auto_pgd import AutoPGDWrapper
+            return AutoPGDWrapper(
+                estimator=classifier, eps=config.epsilon, eps_step=config.eps_step,
+                max_iter=config.max_iter, targeted=config.targeted,
+                batch_size=config.batch_size, verbose=params.get('verbose', True),
+                nb_random_start=params.get('nb_random_start', 5),
+                loss_type=params.get('loss_type', None),
+            ).attack
+        elif attack_type_lower == 'adversarial_patch':
+            from .evasion.adversarial_patch import AdversarialPatchWrapper
+            return AdversarialPatchWrapper(
+                estimator=classifier, max_iter=config.max_iter,
+                learning_rate=config.learning_rate,
+                batch_size=config.batch_size, targeted=config.targeted,
+                rotation_max=params.get('rotation_max', 22.5),
+                scale_min=params.get('scale_min', 0.3),
+                scale_max=params.get('scale_max', 1.0),
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'elastic_net':
+            from .evasion.elastic_net import ElasticNetWrapper
+            return ElasticNetWrapper(
+                estimator=classifier, confidence=config.confidence,
+                targeted=config.targeted, learning_rate=config.learning_rate,
+                max_iter=config.max_iter, binary_search_steps=config.binary_search_steps,
+                initial_const=config.initial_const, batch_size=config.batch_size,
+                beta=params.get('beta', 0.001),
+                decision_rule=params.get('decision_rule', 'EN'),
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'jsma':
+            from .evasion.jsma import JSMAWrapper
+            return JSMAWrapper(
+                estimator=classifier,
+                theta=params.get('theta', 0.1),
+                gamma=params.get('gamma', 1.0),
+                batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'newtonfool':
+            from .evasion.newtonfool import NewtonFoolWrapper
+            return NewtonFoolWrapper(
+                estimator=classifier, max_iter=config.max_iter,
+                eta=params.get('eta', 0.01),
+                batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'universal_perturbation':
+            from .evasion.universal_perturbation import UniversalPerturbationWrapper
+            return UniversalPerturbationWrapper(
+                estimator=classifier, max_iter=config.max_iter,
+                eps=config.epsilon, delta=params.get('delta', 0.2),
+                batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'zoo':
+            from .evasion.zoo import ZOOWrapper
+            return ZOOWrapper(
+                estimator=classifier, confidence=config.confidence,
+                targeted=config.targeted, learning_rate=config.learning_rate,
+                max_iter=config.max_iter,
+                binary_search_steps=config.binary_search_steps,
+                initial_const=config.initial_const,
+                batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'shadow_attack':
+            from .evasion.shadow_attack import ShadowAttackWrapper
+            return ShadowAttackWrapper(
+                estimator=classifier, batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'wasserstein':
+            from .evasion.wasserstein import WassersteinAttackWrapper
+            return WassersteinAttackWrapper(
+                estimator=classifier, targeted=config.targeted,
+                eps=config.epsilon, eps_step=config.eps_step,
+                max_iter=config.max_iter, batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'decision_tree_attack':
+            from .evasion.decision_tree_attack import DecisionTreeAttackWrapper
+            return DecisionTreeAttackWrapper(
+                classifier=classifier,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'brendel_bethge':
+            from .evasion.brendel_bethge import BrendelBethgeWrapper
+            return BrendelBethgeWrapper(
+                estimator=classifier, targeted=config.targeted,
+                batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'pixel_attack':
+            from .evasion.pixel_attack import PixelAttackWrapper
+            return PixelAttackWrapper(
+                estimator=classifier, targeted=config.targeted,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'threshold_attack':
+            from .evasion.threshold_attack import ThresholdAttackWrapper
+            return ThresholdAttackWrapper(
+                estimator=classifier, targeted=config.targeted,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'spatial_transformation':
+            from .evasion.spatial_transformation import SpatialTransformationWrapper
+            return SpatialTransformationWrapper(
+                estimator=classifier,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'feature_adversaries':
+            from .evasion.feature_adversaries import FeatureAdversariesWrapper
+            return FeatureAdversariesWrapper(
+                estimator=classifier, delta=params.get('delta', 0.2),
+                layer=params.get('layer', -1),
+                batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'composite':
+            from .evasion.composite import CompositeAdversarialAttackWrapper
+            return CompositeAdversarialAttackWrapper(
+                estimator=classifier,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'geoda':
+            from .evasion.geometric_decision import GeoDAWrapper
+            return GeoDAWrapper(
+                estimator=classifier, max_iter=config.max_iter,
+                batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'overload':
+            from .evasion.overload import OverloadAttackWrapper
+            return OverloadAttackWrapper(
+                estimator=classifier, eps=config.epsilon,
+                max_iter=config.max_iter, batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'sign_opt':
+            from .evasion.sign_opt import SignOPTWrapper
+            return SignOPTWrapper(
+                estimator=classifier, targeted=config.targeted,
+                epsilon=config.epsilon, max_iter=config.max_iter,
+                num_trial=params.get('num_trial', 100), k=params.get('k', 200),
+                alpha=params.get('alpha', 0.2), beta=params.get('beta', 0.001),
+                batch_size=params.get('batch_size', config.batch_size),
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'lowprofool':
+            from .evasion.lowprofool import LowProFoolWrapper
+            return LowProFoolWrapper(
+                estimator=classifier, n_steps=params.get('n_steps', config.max_iter),
+                threshold=params.get('threshold'), lambd=params.get('lambd', 1.5),
+                eta=params.get('eta', 0.02), eta_decay=params.get('eta_decay', 0.98),
+                eta_min=params.get('eta_min', 1e-7),
+                norm=params.get('norm', 2),
+                importance=params.get('importance'),
+                batch_size=config.batch_size, verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'virtual_adversarial':
+            from .evasion.virtual_adversarial import VirtualAdversarialWrapper
+            return VirtualAdversarialWrapper(
+                estimator=classifier, eps=params.get('eps', config.epsilon),
+                finite_diff=params.get('finite_diff', 1e-6),
+                max_iter=params.get('max_iter', 1),
+                batch_size=config.batch_size, verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower in ('auto_conjugate_gradient', 'auto_cg'):
+            from .evasion.auto_conjugate import AutoConjugateGradientWrapper
+            return AutoConjugateGradientWrapper(
+                estimator=classifier, eps=config.epsilon,
+                eps_step=config.eps_step, max_iter=config.max_iter,
+                targeted=config.targeted,
+                nb_random_start=params.get('nb_random_start', 5),
+                batch_size=config.batch_size,
+                loss_type=params.get('loss_type'),
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'laser_attack':
+            from .evasion.laser_attack import LaserAttackWrapper
+            return LaserAttackWrapper(
+                estimator=classifier,
+                iterations=params.get('iterations', 10),
+                laser_generator=params.get('laser_generator'),
+                image_generator=params.get('image_generator'),
+                random_initializations=params.get('random_initializations', 1),
+                optimisation_algorithm=params.get('optimisation_algorithm'),
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower in ('high_confidence_low_uncertainty', 'hclu'):
+            from .evasion.high_confidence import HighConfidenceLowUncertaintyWrapper
+            return HighConfidenceLowUncertaintyWrapper(
+                estimator=classifier,
+                conf_threshold=params.get('conf_threshold', 0.75),
+                unc_increase=params.get('unc_increase', 100.0),
+                min_val=params.get('min_val', 0.0), max_val=params.get('max_val', 1.0),
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'graphite_blackbox':
+            from .evasion.graphite import GRAPHITEBlackboxWrapper
+            return GRAPHITEBlackboxWrapper(
+                estimator=classifier,
+                noise_budget=params.get('noise_budget', 0.1),
+                num_xforms=params.get('num_xforms', 100),
+                max_iter=config.max_iter, batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'graphite_whitebox':
+            from .evasion.graphite import GRAPHITEWhiteboxWrapper
+            return GRAPHITEWhiteboxWrapper(
+                estimator=classifier,
+                noise_budget=params.get('noise_budget', 0.1),
+                num_xforms=params.get('num_xforms', 100),
+                max_iter=config.max_iter, batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'adversarial_texture':
+            from .evasion.adversarial_texture import AdversarialTextureWrapper
+            return AdversarialTextureWrapper(
+                estimator=classifier,
+                patch_height=params.get('patch_height', 16),
+                patch_width=params.get('patch_width', 16),
+                x_min=params.get('x_min', 0.0), x_max=params.get('x_max', 1.0),
+                step_size=params.get('step_size', 1.0 / 255),
+                max_iter=config.max_iter, batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'dpatch':
+            from .evasion.dpatch import DPatchWrapper
+            return DPatchWrapper(
+                estimator=classifier,
+                patch_shape=tuple(params.get('patch_shape', (40, 40, 3))),
+                learning_rate=params.get('learning_rate', 5.0),
+                max_iter=config.max_iter, batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'robust_dpatch':
+            from .evasion.dpatch import RobustDPatchWrapper
+            return RobustDPatchWrapper(
+                estimator=classifier,
+                patch_shape=tuple(params.get('patch_shape', (40, 40, 3))),
+                patch_location=params.get('patch_location'),
+                crop_range=tuple(params.get('crop_range', (0, 0))),
+                brightness_range=tuple(params.get('brightness_range', (1.0, 1.0))),
+                rotation_weights=tuple(params.get('rotation_weights', (1, 0, 0, 0))),
+                sample_size=params.get('sample_size', 1),
+                learning_rate=params.get('learning_rate', 5.0),
+                max_iter=config.max_iter, batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'frame_saliency':
+            from .evasion.frame_saliency import FrameSaliencyWrapper
+            inner_eps = params.get('inner_eps', 0.1)
+            attacker = params.get('inner_attacker')
+            if attacker is None:
+                attacker = FastGradientMethod(
+                    estimator=classifier, eps=inner_eps,
+                    eps_step=params.get('inner_eps_step', inner_eps / 4.0),
+                    batch_size=config.batch_size,
+                )
+            return FrameSaliencyWrapper(
+                estimator=classifier, attacker=attacker,
+                method=params.get('method', 'iterative_saliency'),
+                frame_index=params.get('frame_index', 1),
+                batch_size=config.batch_size, verbose=params.get('verbose', True),
+            ).attack
+        elif attack_type_lower == 'shapeshifter':
+            from .evasion.shapeshifter import ShapeShifterWrapper
+            return ShapeShifterWrapper(
+                estimator=classifier,
+                random_transform=params.get('random_transform'),
+                batch_size=config.batch_size, max_iter=config.max_iter,
+                texture_as_input=params.get('texture_as_input', False),
+                verbose=params.get('verbose', True),
+            ).attack
         else:
             raise ValueError(f"Unsupported classification attack type: {config.attack_type}")
 
@@ -270,7 +592,10 @@ class AttackGenerator:
 
         classifier_for_crafting = None
         # These attacks require an ART classifier representing the model to be targeted for crafting poisons
-        if attack_type_lower in ['clean_label', 'feature_collision', 'gradient_matching']:
+        if attack_type_lower in [
+            'clean_label', 'feature_collision', 'gradient_matching',
+            'sleeper_agent', 'hidden_trigger', 'bullseye_polytope',
+        ]:
             if model_for_crafting is None or metadata_for_crafting_model is None:
                 raise ValueError(f"Poisoning attack {attack_type_lower} requires a model_for_crafting and its metadata.")
             classifier_for_crafting = self._get_art_classifier_for_crafting( # Renamed helper
@@ -311,6 +636,99 @@ class AttackGenerator:
                                                  lambda_hyper=params.get('lambda_hyper', 0.1), batch_size=config.batch_size,
                                                  verbose=params.get('verbose', True), poisoning_rate=params.get('poisoning_rate', 0.1),
                                                  **(params.get('wrapper_specific_kwargs', {})))
+        elif attack_type_lower == 'baddet_oga':
+            return BadDetOGAWrapper(
+                estimator=model_for_crafting, target_class=params.get('target_class', 0),
+                poisoning_rate=params.get('poisoning_rate', 0.1),
+                trigger_size=params.get('trigger_size', 30),
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        elif attack_type_lower == 'baddet_rma':
+            return BadDetRMAWrapper(
+                estimator=model_for_crafting, target_class=params.get('target_class', 0),
+                poisoning_rate=params.get('poisoning_rate', 0.1),
+                trigger_size=params.get('trigger_size', 30),
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        elif attack_type_lower == 'baddet_gma':
+            return BadDetGMAWrapper(
+                estimator=model_for_crafting, target_class=params.get('target_class', 0),
+                poisoning_rate=params.get('poisoning_rate', 0.1),
+                trigger_size=params.get('trigger_size', 30),
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        elif attack_type_lower == 'baddet_oda':
+            return BadDetODAWrapper(
+                estimator=model_for_crafting, target_class=params.get('target_class', 0),
+                poisoning_rate=params.get('poisoning_rate', 0.1),
+                trigger_size=params.get('trigger_size', 30),
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        elif attack_type_lower == 'dgm_red':
+            if 'z_trigger' not in params or 'x_target' not in params:
+                raise ValueError("DGMReD requires 'z_trigger' and 'x_target' in additional_params.")
+            return DGMReDWrapper(
+                generator=model_for_crafting, z_trigger=params['z_trigger'],
+                x_target=params['x_target'],
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        elif attack_type_lower == 'dgm_trail':
+            if 'z_trigger' not in params or 'x_target' not in params:
+                raise ValueError("DGMTrail requires 'z_trigger' and 'x_target' in additional_params.")
+            return DGMTrailWrapper(
+                generator=model_for_crafting, z_trigger=params['z_trigger'],
+                x_target=params['x_target'],
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        elif attack_type_lower == 'sleeper_agent':
+            from .poisoning.sleeper_agent import SleeperAgentWrapper
+            return SleeperAgentWrapper(
+                classifier=classifier_for_crafting,
+                percent_poison=params.get('percent_poison', 0.1),
+                epsilon=params.get('epsilon', config.epsilon),
+                max_trials=params.get('max_trials', 8),
+                max_epochs=params.get('max_epochs', 250),
+                learning_rate_schedule=params.get('learning_rate_schedule'),
+                batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            )
+        elif attack_type_lower == 'hidden_trigger':
+            from .poisoning.hidden_trigger import HiddenTriggerBackdoorWrapper
+            return HiddenTriggerBackdoorWrapper(
+                classifier=classifier_for_crafting,
+                target=params.get('target', 0),
+                source=params.get('source', 1),
+                feature_layer=params.get('feature_layer', ''),
+                eps=params.get('eps', config.epsilon),
+                learning_rate=params.get('learning_rate', config.learning_rate),
+                decay_coeff=params.get('decay_coeff', 0.5),
+                decay_iter=params.get('decay_iter', 2000),
+                max_iter=params.get('max_iter', config.max_iter),
+                batch_size=config.batch_size,
+                poison_percent=params.get('poison_percent', 0.1),
+                verbose=params.get('verbose', True),
+            )
+        elif attack_type_lower == 'bullseye_polytope':
+            if 'target' not in params:
+                raise ValueError("bullseye_polytope requires 'target' (feature vector) in additional_params.")
+            from .poisoning.bullseye_polytope import BullseyePolytopeWrapper
+            return BullseyePolytopeWrapper(
+                classifier=classifier_for_crafting,
+                target=np.asarray(params['target']),
+                feature_layer=params.get('feature_layer', ''),
+                opt=params.get('opt', 'adam'),
+                max_iter=params.get('max_iter', config.max_iter),
+                learning_rate=params.get('learning_rate', config.learning_rate),
+                momentum=params.get('momentum', 0.9),
+                decay_iter=params.get('decay_iter', 10000),
+                decay_coeff=params.get('decay_coeff', 0.5),
+                epsilon=params.get('epsilon', config.epsilon),
+                dropout=params.get('dropout', 0.3),
+                net_repeat=params.get('net_repeat', 1),
+                endtoend=params.get('endtoend', True),
+                batch_size=config.batch_size,
+                verbose=params.get('verbose', True),
+            )
         else:
             raise ValueError(f"Unsupported poisoning attack type: {config.attack_type}")
 
@@ -373,6 +791,39 @@ class AttackGenerator:
                                  batch_size=params.get('batch_size_miface', config.batch_size), learning_rate=params.get('learning_rate_miface', config.learning_rate),
                                  lambda_tv=params.get('lambda_tv', 0.1), lambda_l2=params.get('lambda_l2', 0.001),
                                  verbose=params.get('verbose', True), **params.get('wrapper_specific_kwargs', {}))
+        elif attack_type_lower == 'label_only_boundary':
+            return LabelOnlyBoundaryDistanceWrapper(
+                estimator=target_model_obj,
+                distance_threshold_tau=params.get('distance_threshold_tau', 0.5),
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        elif attack_type_lower == 'label_only_gap':
+            return LabelOnlyGapAttackWrapper(
+                estimator=target_model_obj,
+                distance_threshold_tau=params.get('distance_threshold_tau', 0.5),
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        elif attack_type_lower == 'attribute_inference_wb_dt':
+            if 'attack_feature_index' not in params:
+                raise ValueError("AttributeInferenceWhiteBoxDT requires 'attack_feature_index' in additional_params.")
+            return AttributeInferenceWhiteBoxDTWrapper(
+                estimator=target_model_obj,
+                attack_feature_index=params['attack_feature_index'],
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        elif attack_type_lower == 'attribute_inference_wb_lifestyle':
+            if 'attack_feature_index' not in params:
+                raise ValueError("AttributeInferenceWhiteBoxLifestyleDT requires 'attack_feature_index' in additional_params.")
+            return AttributeInferenceWhiteBoxLifestyleDTWrapper(
+                estimator=target_model_obj,
+                attack_feature_index=params['attack_feature_index'],
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        elif attack_type_lower == 'db_reconstruction':
+            return DatabaseReconstructionWrapper(
+                estimator=target_model_obj,
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
         else:
             raise ValueError(f"Unsupported inference attack type: {config.attack_type}")
 
@@ -470,6 +921,36 @@ class AttackGenerator:
         else:
             raise ValueError(f"Unsupported attack type '{attack_type_lower}' or model setup for generator category.")
 
+    def _create_audio_attack(self, estimator_obj: Any, config: AttackConfig) -> Any:
+        """Creates an audio adversarial attack instance.
+
+        Args:
+            estimator_obj: An ART estimator instance for the target ASR model.
+            config: AttackConfig object.
+
+        Returns:
+            An instance of an audio attack wrapper.
+        """
+        attack_type_lower = config.attack_type.lower()
+        params = config.additional_params or {}
+
+        if attack_type_lower == 'carlini_wagner_audio':
+            return CarliniWagnerAudioWrapper(
+                estimator=estimator_obj, eps=config.epsilon,
+                max_iter=config.max_iter, learning_rate=config.learning_rate,
+                batch_size=config.batch_size, verbose=params.get('verbose', True),
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        elif attack_type_lower == 'imperceptible_asr':
+            return ImperceptibleASRWrapper(
+                estimator=estimator_obj, eps=config.epsilon,
+                max_iter=config.max_iter, learning_rate=config.learning_rate,
+                batch_size=config.batch_size, verbose=params.get('verbose', True),
+                **(params.get('wrapper_specific_kwargs', {})),
+            )
+        else:
+            raise ValueError(f"Unsupported audio attack type: {config.attack_type}")
+
     def _create_llm_attack(self, model_obj: Any, metadata: ModelMetadata, config: AttackConfig, num_classes: int) -> Any:
         """Creates an attack instance for Large Language Models (LLMs).
 
@@ -533,11 +1014,13 @@ class AttackGenerator:
         # Check if it's one of our specific wrappers that have their own generate/extract/infer methods
         if any(wrapper_name in instance_class_name for wrapper_name in
                ["BackdoorAttackWrapper", "CleanLabelAttackWrapper", "FeatureCollisionAttackWrapper", "GradientMatchingAttackWrapper",
+                "SleeperAgentWrapper", "HiddenTriggerBackdoorWrapper", "BullseyePolytopeWrapper",
                 "CopycatCNNWrapper", "KnockoffNetsWrapper", "FunctionallyEquivalentExtractionWrapper",
                 "MembershipInferenceBlackBoxWrapper", "AttributeInferenceBlackBoxWrapper", "MIFaceWrapper"]):
 
             expected_method = "'extract'" # Default for extraction
-            if any(name_part in instance_class_name for name_part in ["Poisoning", "Backdoor", "CleanLabel", "FeatureCollision", "GradientMatching"]):
+            if any(name_part in instance_class_name for name_part in ["Poisoning", "Backdoor", "CleanLabel", "FeatureCollision", "GradientMatching",
+                                                                       "SleeperAgent", "HiddenTrigger", "BullseyePolytope"]):
                 expected_method = "'generate' (for data poisoning)"
             elif any(name_part in instance_class_name for name_part in ["Inference", "MIFace"]):
                 expected_method = "'fit' and/or 'infer'"

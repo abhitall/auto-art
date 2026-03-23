@@ -1,6 +1,69 @@
-# AgentOps Telemetry
+# Telemetry & Observability
 
-OpenTelemetry-compatible tracing for autonomous agent operations.
+Auto-ART provides two telemetry layers:
+
+1. **TelemetryProvider** -- Production-grade OpenTelemetry integration with traces, metrics, and structured JSON logs
+2. **AgentTracer** -- Lightweight agent state-machine tracer for autonomous agent evaluation
+
+## OpenTelemetry Integration {#opentelemetry}
+
+Install the telemetry extras:
+
+```bash
+uv add auto-art[telemetry]
+# or: pip install auto-art[telemetry]
+```
+
+### Quick Start
+
+```python
+from auto_art.core.telemetry import TelemetryProvider, TelemetryConfig, ExportTarget
+
+tp = TelemetryProvider(TelemetryConfig(
+    service_name="auto-art",
+    environment="production",
+    export_target=ExportTarget.OTLP_GRPC,
+    otlp_endpoint="http://localhost:4317",
+))
+tp.initialize()
+
+with tp.trace_span("evaluate_model", attributes={"model": "resnet50"}):
+    tp.record_metric("attacks_executed", 5)
+    tp.record_histogram("attack_duration_seconds", 12.5)
+    tp.log("Evaluation complete", extra={"score": 95.0})
+```
+
+### Three Pillars
+
+| Pillar | What It Does | Export |
+|--------|-------------|--------|
+| **Traces** | Distributed spans with parent-child relationships | OTLP gRPC/HTTP, Console |
+| **Metrics** | Counters, histograms, gauges for runtime statistics | OTLP gRPC/HTTP, Console |
+| **Logs** | Structured JSON with automatic trace ID correlation | OTLP gRPC/HTTP, Console |
+
+### Orchestrator Integration
+
+The orchestrator automatically creates spans for each evaluation phase when `TelemetryProvider` is initialized:
+
+```
+orchestrator.run()
+  └─ phase.evasion (span)
+  │   └─ attack.fgsm (metric: attacks_executed)
+  │   └─ attack.pgd (metric: attacks_executed)
+  └─ phase.defence (span)
+  └─ phase.agentic (span)
+  └─ evaluation_duration_seconds (histogram)
+```
+
+### Backends
+
+Compatible with any OpenTelemetry-compatible backend:
+- Jaeger, Zipkin, Grafana Tempo (traces)
+- Prometheus, Datadog (metrics)
+- Elasticsearch, Loki (logs)
+- Grafana Cloud, Datadog, New Relic (all-in-one)
+
+---
 
 ## AgentTracer
 

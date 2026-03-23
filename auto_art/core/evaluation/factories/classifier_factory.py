@@ -15,6 +15,42 @@ from art.estimators.classification import (
 from art.estimators.classification.scikitlearn import ScikitlearnClassifier
 from art.estimators.object_detection import PyTorchObjectDetector
 
+try:
+    from art.estimators.classification.xgboost import XGBoostClassifier as ARTXGBoostClassifier
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+
+try:
+    from art.estimators.classification.lightgbm import LightGBMClassifier as ARTLightGBMClassifier
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+
+try:
+    from art.estimators.classification.catboost import CatBoostARTClassifier as ARTCatBoostClassifier
+    CATBOOST_AVAILABLE = True
+except ImportError:
+    CATBOOST_AVAILABLE = False
+
+try:
+    from art.estimators.classification.GPy import GPyGaussianProcessClassifier as ARTGPyClassifier
+    GPY_AVAILABLE = True
+except ImportError:
+    GPY_AVAILABLE = False
+
+try:
+    from art.estimators.classification.blackbox import BlackBoxClassifier as ARTBlackBoxClassifier
+    BLACKBOX_AVAILABLE = True
+except ImportError:
+    BLACKBOX_AVAILABLE = False
+
+try:
+    from art.estimators.classification.hugging_face import HuggingFaceClassifierPyTorch
+    HUGGINGFACE_AVAILABLE = True
+except ImportError:
+    HUGGINGFACE_AVAILABLE = False
+
 # Local Imports
 from ....config.manager import ConfigManager
 from ..config.evaluation_config import ModelType, Framework
@@ -124,12 +160,16 @@ class ClassifierFactory:
             (Framework.TENSORFLOW, ModelType.CLASSIFICATION): ClassifierFactory._create_tensorflow_classifier,
             (Framework.KERAS, ModelType.CLASSIFICATION): ClassifierFactory._create_keras_classifier,
             (Framework.SKLEARN, ModelType.CLASSIFICATION): ClassifierFactory._create_sklearn_classifier,
+            (Framework.XGBOOST, ModelType.CLASSIFICATION): ClassifierFactory._create_xgboost_classifier,
+            (Framework.LIGHTGBM, ModelType.CLASSIFICATION): ClassifierFactory._create_lightgbm_classifier,
+            (Framework.CATBOOST, ModelType.CLASSIFICATION): ClassifierFactory._create_catboost_classifier,
+            (Framework.GPY, ModelType.CLASSIFICATION): ClassifierFactory._create_gpy_classifier,
+            (Framework.TRANSFORMERS, ModelType.CLASSIFICATION): ClassifierFactory._create_transformers_classifier,
         }
 
         key = (framework, model_type)
         if key not in creators:
             if framework == Framework.KERAS and (Framework.TENSORFLOW, model_type) in creators:
-                # print(f"Info: No specific Keras creator for {model_type.value}, using TensorFlow creator as fallback.", file=sys.stderr)
                 return creators[(Framework.TENSORFLOW, model_type)]
             raise ValueError(f"Unsupported framework/model type combination for classifier factory: {framework.value}/{model_type.value}")
 
@@ -238,13 +278,99 @@ class ClassifierFactory:
         **kwargs: Any
     ) -> ScikitlearnClassifier:
         resolved_device_type = kwargs.pop('device_type', 'cpu')
-        if resolved_device_type == 'gpu':
-            # print("Warning: ScikitlearnClassifier runs on CPU. 'gpu' device request ignored.", file=sys.stderr)
-            pass
         clip_values = kwargs.pop('clip_values', (0.0, 1.0))
 
         return ScikitlearnClassifier(
             model=model,
             clip_values=clip_values,
-            **kwargs # Pass remaining kwargs like preprocessing, postprocessing
+            **kwargs
+        )
+
+    @staticmethod
+    def _create_xgboost_classifier(model: Any, **kwargs: Any) -> Any:
+        kwargs.pop('device_type', None)
+        if not XGBOOST_AVAILABLE:
+            raise ImportError("ART XGBoostClassifier not available. Install xgboost.")
+        clip_values = kwargs.pop('clip_values', (0.0, 1.0))
+        nb_classes = kwargs.pop('nb_classes', 2)
+        nb_features = kwargs.pop('nb_features', None)
+        return ARTXGBoostClassifier(
+            model=model, clip_values=clip_values,
+            nb_classes=nb_classes, nb_features=nb_features,
+            **kwargs
+        )
+
+    @staticmethod
+    def _create_lightgbm_classifier(model: Any, **kwargs: Any) -> Any:
+        kwargs.pop('device_type', None)
+        if not LIGHTGBM_AVAILABLE:
+            raise ImportError("ART LightGBMClassifier not available. Install lightgbm.")
+        clip_values = kwargs.pop('clip_values', (0.0, 1.0))
+        nb_classes = kwargs.pop('nb_classes', 2)
+        return ARTLightGBMClassifier(
+            model=model, clip_values=clip_values,
+            nb_classes=nb_classes,
+            **kwargs
+        )
+
+    @staticmethod
+    def _create_catboost_classifier(model: Any, **kwargs: Any) -> Any:
+        kwargs.pop('device_type', None)
+        if not CATBOOST_AVAILABLE:
+            raise ImportError("ART CatBoostClassifier not available. Install catboost.")
+        clip_values = kwargs.pop('clip_values', (0.0, 1.0))
+        nb_classes = kwargs.pop('nb_classes', 2)
+        return ARTCatBoostClassifier(
+            model=model, clip_values=clip_values,
+            nb_classes=nb_classes,
+            **kwargs
+        )
+
+    @staticmethod
+    def _create_gpy_classifier(model: Any, **kwargs: Any) -> Any:
+        kwargs.pop('device_type', None)
+        if not GPY_AVAILABLE:
+            raise ImportError("ART GPyGaussianProcessClassifier not available. Install GPy.")
+        clip_values = kwargs.pop('clip_values', (0.0, 1.0))
+        return ARTGPyClassifier(
+            model=model, clip_values=clip_values,
+            **kwargs
+        )
+
+    @staticmethod
+    def _create_transformers_classifier(model: Any, **kwargs: Any) -> Any:
+        """Create an ART classifier wrapping a HuggingFace Transformers model.
+
+        Requires ``art>=1.16.0`` with the ``hugging_face`` estimator and
+        ``transformers`` + ``torch`` installed.
+        """
+        if not HUGGINGFACE_AVAILABLE:
+            raise ImportError(
+                "ART HuggingFaceClassifierPyTorch not available. "
+                "Install art>=1.16.0 and transformers."
+            )
+
+        device_to_use = kwargs.pop('device_type', 'cpu')
+
+        if 'input_shape' not in kwargs or 'nb_classes' not in kwargs:
+            raise ValueError(
+                "HuggingFaceClassifierPyTorch requires 'input_shape' and "
+                "'nb_classes' in kwargs."
+            )
+
+        input_shape = kwargs.pop('input_shape')
+        nb_classes = kwargs.pop('nb_classes')
+        loss_function = kwargs.pop('loss_fn', nn.CrossEntropyLoss())
+        optimizer = kwargs.pop('optimizer', None)
+        clip_values = kwargs.pop('clip_values', (0.0, 1.0))
+
+        return HuggingFaceClassifierPyTorch(
+            model=model,
+            loss=loss_function,
+            input_shape=input_shape,
+            nb_classes=nb_classes,
+            optimizer=optimizer,
+            clip_values=clip_values,
+            device_type=device_to_use,
+            **kwargs
         )

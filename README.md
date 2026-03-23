@@ -1,20 +1,24 @@
 # Auto-ART: Automated Adversarial Robustness Testing
 
-A Python framework for adversarial robustness evaluation of ML models and autonomous AI agents. Built on [ART](https://github.com/Trusted-AI/adversarial-robustness-toolbox), aligned with [OWASP LLM Top 10 (2025)](https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/) and [NIST AI 100-2](https://csrc.nist.gov/pubs/ai/100/2/e2025/final).
+A Python framework for comprehensive adversarial robustness evaluation of ML models and autonomous AI agents. Built on [ART v1.20+](https://github.com/Trusted-AI/adversarial-robustness-toolbox), aligned with [OWASP LLM Top 10 (2025)](https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/) and [NIST AI 100-2](https://csrc.nist.gov/pubs/ai/100/2/e2025/final).
 
 ## What It Does
 
-- **30+ attacks** across evasion, poisoning, extraction, inference, LLM, and agentic categories
-- **20+ defences** including ART wrappers, input sanitization, guardrails, and circuit breakers
-- **YAML-driven orchestrator** for one-command evaluation with CI/CD gates
+- **43 attacks** across evasion (28), poisoning (4), extraction (3), inference (3), regression (3), LLM (1), and agentic categories
+- **28 defence modules** spanning preprocessors, postprocessors, trainers, transformers, detectors, guardrails, and certification
+- **9 ML frameworks** -- PyTorch, TensorFlow, Keras, scikit-learn, XGBoost, LightGBM, CatBoost, GPy, Transformers
+- **YAML-driven orchestrator** with 6 evaluation phases, real attack execution, and CI/CD gates
+- **SARIF output** for GitHub Code Scanning, GitLab SAST, and Azure DevOps integration
+- **Adaptive attack selection** -- memory-guided, tiered escalation inspired by [AutoRedTeamer](https://arxiv.org/abs/2503.15754)
+- **Parallel execution engine** -- concurrent attack evaluation with configurable workers and timeouts
 - **Continuous red teaming** with multi-turn adaptive attacks across 7 OWASP-mapped categories
-- **Robustness certification** via Randomized Smoothing and GREAT Score (ART 1.20+)
+- **Robustness certification** via Randomized Smoothing, DeRandomized Smoothing, DeepZ, IBP, and GREAT Score (ART 1.20+)
 - **AgentOps telemetry** with state machine tracing and infinite loop detection
 
 ## Install
 
 ```bash
-pip install .                   # Core
+pip install .                   # Core (includes PyYAML, ART 1.20+)
 pip install ".[pytorch]"        # + PyTorch
 pip install ".[agentic]"        # + Agentic security
 pip install ".[dev]"            # + Dev tools
@@ -44,6 +48,14 @@ result = AdvWebDOMAttack(max_injections=5).execute_agentic(agent=my_agent, envir
 from auto_art.core.orchestrator import Orchestrator
 report = Orchestrator.from_yaml("eval_config.yaml").run(agent=my_agent)
 report.to_markdown()  # Human-readable report
+report.to_sarif()     # SARIF 2.1.0 for CI/CD
+```
+
+**Adaptive attack selection:**
+```python
+from auto_art.core.adaptive import AdaptiveAttackSelector
+selector = AdaptiveAttackSelector(budget_seconds=3600)
+attacks = selector.select_attacks(model_arch="resnet50", max_attacks=10)
 ```
 
 ## OWASP Coverage
@@ -58,19 +70,20 @@ Full documentation lives in [`docs/`](docs/README.md):
 |---------|----------|
 | [Getting Started](docs/getting-started.md) | Installation, quick start, first evaluation |
 | [Architecture](docs/architecture.md) | System design, layers, data flow |
-| [Attacks](docs/attacks/README.md) | All 30+ attacks with usage examples |
-| [Defences](docs/defences/README.md) | All 20+ defences with configuration |
-| [Orchestrator](docs/automation/orchestrator.md) | YAML schema, CI/CD integration |
+| [Attacks](docs/attacks/README.md) | All 43 attacks with usage examples |
+| [Defences](docs/defences/README.md) | All 28 defence modules with configuration |
+| [Orchestrator](docs/automation/orchestrator.md) | YAML schema, 6 phases, SARIF output |
 | [Red Teaming](docs/automation/red-teaming.md) | Continuous adversarial probing |
 | [OWASP Mapping](docs/automation/owasp-mapping.md) | LLM Top 10 coverage tracking |
-| [CI/CD](docs/automation/ci-cd.md) | Pipeline phases, deployment gates |
+| [CI/CD](docs/automation/ci-cd.md) | Pipeline phases, SARIF integration, deployment gates |
 | [Telemetry](docs/telemetry.md) | Agent tracing, loop detection |
+| [SOTA Roadmap](docs/sota-roadmap.md) | Gap analysis, research integration, future plans |
 
 ## Tests
 
 ```bash
 pip install ".[dev]"
-pytest tests/ -v              # 223+ tests
+pytest tests/ -v              # 346+ tests
 ```
 
 ## License
@@ -80,6 +93,7 @@ MIT
 ## Acknowledgments
 
 - [Adversarial Robustness Toolbox (ART)](https://github.com/Trusted-AI/adversarial-robustness-toolbox) by Trusted-AI / Linux Foundation AI & Data
+- [AutoRedTeamer](https://arxiv.org/abs/2503.15754) for memory-guided adaptive attack selection
 - [IBM ARES](https://github.com/IBM/ares) for YAML orchestration patterns
 - [RobustBench](https://robustbench.github.io/) for AutoAttack evaluation methodology
 - [OWASP LLM Top 10](https://genai.owasp.org/resource/owasp-top-10-for-llm-applications-2025/) and [NIST AI 100-2](https://csrc.nist.gov/pubs/ai/100/2/e2025/final) for threat taxonomy
