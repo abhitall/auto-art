@@ -1582,7 +1582,6 @@ def _register_builtin_defenses(registry: DefenseRegistry) -> None:
             defense_type=DefenseType.DETECTOR, cost_estimate=CostLevel.MEDIUM,
             description="Detect poisoned documents in RAG retrieval pipeline",
             compatible_attacks=("backdoor",),
-            owasp_mapping=("LLM08",),
             tags=("rag", "poisoning", "detection"),
         ), f"{_base}.rag_poisoning_detector", "RAGPoisoningDetector"),
         (DefenseMetadata(
@@ -1590,7 +1589,6 @@ def _register_builtin_defenses(registry: DefenseRegistry) -> None:
             defense_type=DefenseType.INPUT_SANITIZER, cost_estimate=CostLevel.LOW,
             description="Detect and neutralize in-context prompt injection",
             compatible_attacks=("hotflip",),
-            owasp_mapping=("LLM01",),
             tags=("llm", "prompt-injection", "sanitizer"),
         ), f"{_base}.in_context_defence", "InContextDefence"),
         (DefenseMetadata(
@@ -1598,7 +1596,6 @@ def _register_builtin_defenses(registry: DefenseRegistry) -> None:
             defense_type=DefenseType.INPUT_SANITIZER, cost_estimate=CostLevel.LOW,
             description="Multi-layer input sanitization (DOM, visual, semantic)",
             compatible_attacks=("hotflip",),
-            owasp_mapping=("LLM01", "LLM05"),
             tags=("sanitizer", "multi-layer"),
         ), f"{_base}.input_sanitizer", "InputSanitizer"),
     ]
