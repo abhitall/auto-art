@@ -1312,6 +1312,67 @@ def _register_builtin_attacks(registry: AttackRegistry) -> None:
         f"{_base}.nlp.semantic_attack", "SemanticAttackWrapper",
     )
 
+    # === AGENTIC ATTACKS ===
+    _agentic_base = "auto_art.core.attacks.agentic.advanced_agentic"
+    agentic_attacks = [
+        (AttackMetadata(
+            name="indirect_prompt_injection", display_name="Indirect Prompt Injection",
+            category=AttackCategory.AGENTIC, threat_model=ThreatModel.BLACK_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.MEDIUM,
+            description="Inject instructions via tool outputs, not user input (ASI01)",
+            mitre_atlas_ids=("AML.T0051.001", "AML.T0055"),
+            owasp_mapping=("LLM01", "ASI01"),
+            tags=("agent", "injection", "tool-output"),
+        ), _agentic_base, "IndirectPromptInjectionWrapper"),
+        (AttackMetadata(
+            name="goal_hijacking_chain", display_name="Goal Hijacking Chain",
+            category=AttackCategory.AGENTIC, threat_model=ThreatModel.BLACK_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.MEDIUM,
+            description="Multi-step gradual goal redirection over interactions (ASI01)",
+            mitre_atlas_ids=("AML.T0057",),
+            owasp_mapping=("ASI01",),
+            tags=("agent", "goal-hijacking", "multi-step"),
+        ), _agentic_base, "GoalHijackingChainWrapper"),
+        (AttackMetadata(
+            name="tool_misuse_chain", display_name="Tool Misuse Chain",
+            category=AttackCategory.AGENTIC, threat_model=ThreatModel.BLACK_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.MEDIUM,
+            description="Legitimate tool sequences achieving malicious goals (ASI02)",
+            mitre_atlas_ids=("AML.T0057",),
+            owasp_mapping=("ASI02",),
+            tags=("agent", "tool-misuse", "chain"),
+        ), _agentic_base, "ToolMisuseChainWrapper"),
+        (AttackMetadata(
+            name="confused_deputy", display_name="Confused Deputy",
+            category=AttackCategory.AGENTIC, threat_model=ThreatModel.BLACK_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.LOW,
+            description="Agent acts on attacker's behalf using user's permissions (ASI03)",
+            mitre_atlas_ids=("AML.T0057",),
+            owasp_mapping=("ASI03",),
+            tags=("agent", "confused-deputy", "privilege"),
+        ), _agentic_base, "ConfusedDeputyWrapper"),
+        (AttackMetadata(
+            name="memory_poisoning", display_name="Memory Poisoning",
+            category=AttackCategory.AGENTIC, threat_model=ThreatModel.BLACK_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.MEDIUM,
+            description="Corrupt persistent memory to influence future sessions (ASI06)",
+            mitre_atlas_ids=("AML.T0020",),
+            owasp_mapping=("ASI06",),
+            tags=("agent", "memory", "poisoning"),
+        ), _agentic_base, "MemoryPoisoningWrapper"),
+        (AttackMetadata(
+            name="vector_embedding_weakness", display_name="Vector Embedding Weakness",
+            category=AttackCategory.AGENTIC, threat_model=ThreatModel.BLACK_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.MEDIUM,
+            description="RAG embedding space manipulation (OWASP LLM08)",
+            owasp_mapping=("LLM08",),
+            tags=("agent", "rag", "embedding", "vector"),
+        ), _agentic_base, "VectorEmbeddingWrapper"),
+    ]
+
+    for meta, mod_path, cls_name in agentic_attacks:
+        registry.register(meta, mod_path, cls_name)
+
     # === PRESETS ===
     registry.add_preset("quick_scan", ["fgsm", "bim", "square_attack"])
     registry.add_preset("standard", [
@@ -1334,6 +1395,11 @@ def _register_builtin_attacks(registry: AttackRegistry) -> None:
     registry.add_preset("privacy_audit", [
         "membership_inference_bb", "attribute_inference_bb",
         "model_inversion", "label_only_boundary", "db_reconstruction",
+    ])
+    registry.add_preset("agentic_security", [
+        "indirect_prompt_injection", "goal_hijacking_chain",
+        "tool_misuse_chain", "confused_deputy", "memory_poisoning",
+        "vector_embedding_weakness",
     ])
     registry.add_preset("llm_red_team", [
         "pair", "tap", "many_shot", "crescendo",
