@@ -1227,6 +1227,78 @@ def _register_builtin_attacks(registry: AttackRegistry) -> None:
         f"{_base}.llm.hotflip", "HotFlipWrapper",
     )
 
+    # === ADVANCED LLM RED TEAMING ===
+    advanced_llm_attacks = [
+        (AttackMetadata(
+            name="pair", display_name="PAIR",
+            category=AttackCategory.LLM, threat_model=ThreatModel.BLACK_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.MEDIUM,
+            description="Prompt Automatic Iterative Refinement — LLM-based jailbreak optimization",
+            timeout_estimate_seconds=300,
+            references=("Chao et al. 2024",),
+            mitre_atlas_ids=("AML.T0051",),
+            owasp_mapping=("LLM01",),
+            tags=("jailbreak", "iterative", "black-box", "red-team"),
+        ), f"{_base}.llm.pair_attack", "PAIRAttackWrapper"),
+        (AttackMetadata(
+            name="tap", display_name="TAP",
+            category=AttackCategory.LLM, threat_model=ThreatModel.BLACK_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.HIGH,
+            description="Tree of Attacks with Pruning — tree search jailbreak (70-85% ASR)",
+            timeout_estimate_seconds=600,
+            references=("Mehrotra et al. 2024",),
+            mitre_atlas_ids=("AML.T0051",),
+            owasp_mapping=("LLM01",),
+            tags=("jailbreak", "tree-search", "pruning", "red-team"),
+        ), f"{_base}.llm.tap_attack", "TAPAttackWrapper"),
+        (AttackMetadata(
+            name="gcg", display_name="GCG",
+            category=AttackCategory.LLM, threat_model=ThreatModel.WHITE_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.VERY_HIGH,
+            description="Greedy Coordinate Gradient — token-level suffix optimization",
+            is_gradient_based=True, requires_gpu=True, timeout_estimate_seconds=3600,
+            references=("Zou et al. 2023",),
+            mitre_atlas_ids=("AML.T0043.000",),
+            owasp_mapping=("LLM01",),
+            tags=("jailbreak", "gradient", "token-optimization", "universal"),
+        ), f"{_base}.llm.gcg_attack", "GCGAttackWrapper"),
+        (AttackMetadata(
+            name="many_shot", display_name="Many-Shot Jailbreak",
+            category=AttackCategory.LLM, threat_model=ThreatModel.BLACK_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.LOW,
+            description="Many-shot jailbreaking via in-context learning exploitation (60-90% ASR)",
+            timeout_estimate_seconds=60,
+            references=("Anthropic 2024",),
+            mitre_atlas_ids=("AML.T0051",),
+            owasp_mapping=("LLM01",),
+            tags=("jailbreak", "in-context-learning", "long-context"),
+        ), f"{_base}.llm.many_shot", "ManyShotAttackWrapper"),
+        (AttackMetadata(
+            name="crescendo", display_name="Crescendo",
+            category=AttackCategory.LLM, threat_model=ThreatModel.BLACK_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.MEDIUM,
+            description="Crescendo multi-turn gradual escalation (75-90% ASR)",
+            timeout_estimate_seconds=300,
+            references=("Microsoft 2025",),
+            mitre_atlas_ids=("AML.T0051",),
+            owasp_mapping=("LLM01",),
+            tags=("jailbreak", "multi-turn", "escalation", "red-team"),
+        ), f"{_base}.llm.many_shot", "CrescendoAttackWrapper"),
+        (AttackMetadata(
+            name="system_prompt_leakage", display_name="System Prompt Leakage",
+            category=AttackCategory.LLM, threat_model=ThreatModel.BLACK_BOX,
+            norm_type=NormType.NONE, cost_estimate=CostLevel.LOW,
+            description="Extract system prompts via multiple elicitation techniques (OWASP LLM07)",
+            timeout_estimate_seconds=60,
+            mitre_atlas_ids=("AML.T0051",),
+            owasp_mapping=("LLM07",),
+            tags=("leakage", "system-prompt", "extraction"),
+        ), f"{_base}.llm.many_shot", "SystemPromptLeakageWrapper"),
+    ]
+
+    for meta, mod_path, cls_name in advanced_llm_attacks:
+        registry.register(meta, mod_path, cls_name)
+
     # === NLP ATTACKS ===
     registry.register(
         AttackMetadata(
@@ -1262,6 +1334,14 @@ def _register_builtin_attacks(registry: AttackRegistry) -> None:
     registry.add_preset("privacy_audit", [
         "membership_inference_bb", "attribute_inference_bb",
         "model_inversion", "label_only_boundary", "db_reconstruction",
+    ])
+    registry.add_preset("llm_red_team", [
+        "pair", "tap", "many_shot", "crescendo",
+        "system_prompt_leakage", "hotflip",
+    ])
+    registry.add_preset("llm_red_team_full", [
+        "pair", "tap", "gcg", "many_shot", "crescendo",
+        "system_prompt_leakage", "hotflip",
     ])
 
 
