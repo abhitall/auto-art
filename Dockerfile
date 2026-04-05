@@ -33,11 +33,12 @@ COPY pyproject.toml uv.lock* ./
 # Install dependencies into a virtual environment
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Copy source code
+# Copy source code and README (required by hatchling build)
+COPY README.md ./
 COPY auto_art ./auto_art
 
-# Install the project itself
-RUN uv sync --frozen --no-dev
+# Install the project itself (non-editable so .pth points to site-packages)
+RUN uv sync --frozen --no-dev --no-editable
 
 # ============================================================
 # Stage 2: Runtime
@@ -57,6 +58,10 @@ WORKDIR /app
 COPY --from=builder /build/.venv /app/.venv
 COPY --from=builder /build/auto_art /app/auto_art
 COPY --from=builder /build/pyproject.toml /app/pyproject.toml
+
+# Fix venv shebangs (builder path → runtime path)
+RUN find /app/.venv/bin -type f -exec \
+    sed -i 's|#!/build/.venv/bin/python|#!/app/.venv/bin/python|g' {} + 2>/dev/null || true
 
 # Set up path to use venv
 ENV PATH="/app/.venv/bin:$PATH"
