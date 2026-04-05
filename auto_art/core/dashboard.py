@@ -41,24 +41,153 @@ _CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
      background:#f8fafc;color:#1e293b;line-height:1.6;padding:24px}
-.container{max-width:960px;margin:0 auto}
+.container{max-width:1100px;margin:0 auto}
 h1{font-size:1.6rem;margin-bottom:4px}
 h2{font-size:1.15rem;margin:28px 0 10px;color:#334155;border-bottom:2px solid #e2e8f0;padding-bottom:4px}
 .meta{color:#64748b;font-size:.85rem;margin-bottom:18px}
 .cards{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px}
 .card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px 20px;flex:1;min-width:140px;
-      box-shadow:0 1px 3px rgba(0,0,0,.06)}
+      box-shadow:0 1px 3px rgba(0,0,0,.06);cursor:pointer;transition:box-shadow .2s}
+.card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1)}
 .card .label{font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;color:#64748b;margin-bottom:2px}
 .card .value{font-size:1.5rem;font-weight:700}
 table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:8px;
       overflow:hidden;margin-bottom:18px}
 th{background:#f1f5f9;text-align:left;padding:8px 12px;font-size:.8rem;text-transform:uppercase;
-   letter-spacing:.4px;color:#475569;border-bottom:2px solid #e2e8f0}
+   letter-spacing:.4px;color:#475569;border-bottom:2px solid #e2e8f0;cursor:pointer;user-select:none}
+th:hover{background:#e2e8f0}
+th .sort-arrow{font-size:.65rem;margin-left:4px;opacity:.4}
+th.sorted .sort-arrow{opacity:1}
 td{padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:.88rem}
 tr:last-child td{border-bottom:none}
+tr.clickable-row{cursor:pointer;transition:background .15s}
+tr.clickable-row:hover{background:#f0f9ff}
 .pass{color:#16a34a;font-weight:600}
 .fail{color:#dc2626;font-weight:600}
 .warn{color:#ca8a04;font-weight:600}
+.collapsible{cursor:pointer;user-select:none}
+.collapsible::before{content:"\\25BC ";font-size:.7rem;display:inline-block;transition:transform .2s;margin-right:4px}
+.collapsible.collapsed::before{transform:rotate(-90deg)}
+.collapsible-content{overflow:hidden;transition:max-height .3s ease;max-height:2000px}
+.collapsible-content.hidden{max-height:0}
+.detail-panel{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px;
+              margin:8px 0 18px 0;display:none;animation:fadeIn .2s ease}
+.detail-panel.visible{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.filter-bar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.filter-bar select,.filter-bar input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;
+                                       font-size:.85rem;background:#fff}
+.filter-bar input{width:200px}
+.filter-bar label{font-size:.8rem;color:#64748b;text-transform:uppercase;letter-spacing:.3px}
+.chart-container{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:20px;
+                  margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.bar-chart{display:flex;align-items:flex-end;gap:6px;height:180px;padding-top:20px}
+.bar-chart .bar{flex:1;min-width:20px;max-width:60px;border-radius:4px 4px 0 0;position:relative;
+                transition:height .3s ease;cursor:pointer}
+.bar-chart .bar:hover{opacity:.85}
+.bar-chart .bar .bar-label{position:absolute;bottom:-22px;left:50%;transform:translateX(-50%);
+                            font-size:.65rem;color:#64748b;white-space:nowrap;max-width:60px;
+                            overflow:hidden;text-overflow:ellipsis}
+.bar-chart .bar .bar-value{position:absolute;top:-18px;left:50%;transform:translateX(-50%);
+                            font-size:.7rem;font-weight:600;color:#334155}
+.tooltip{position:absolute;background:#1e293b;color:#fff;padding:8px 12px;border-radius:6px;
+         font-size:.8rem;pointer-events:none;z-index:100;display:none;max-width:280px}
+.tab-bar{display:flex;gap:4px;margin-bottom:14px;border-bottom:2px solid #e2e8f0}
+.tab-bar button{padding:8px 16px;border:none;background:none;color:#64748b;font-size:.85rem;
+                cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab-bar button.active{color:#2563eb;border-bottom-color:#2563eb;font-weight:600}
+.tab-bar button:hover{color:#334155}
+.tab-content{display:none}
+.tab-content.active{display:block}
+"""
+
+_JS = """
+<script>
+// Collapsible sections
+document.querySelectorAll('.collapsible').forEach(el => {
+  el.addEventListener('click', () => {
+    el.classList.toggle('collapsed');
+    const content = el.nextElementSibling;
+    if (content && content.classList.contains('collapsible-content')) {
+      content.classList.toggle('hidden');
+    }
+  });
+});
+
+// Table sorting
+document.querySelectorAll('table[data-sortable]').forEach(table => {
+  const headers = table.querySelectorAll('th[data-sort]');
+  headers.forEach((th, colIdx) => {
+    th.addEventListener('click', () => {
+      const tbody = table.querySelector('tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      const isNum = th.dataset.sort === 'number';
+      const asc = !th.classList.contains('sorted-asc');
+      headers.forEach(h => h.classList.remove('sorted', 'sorted-asc', 'sorted-desc'));
+      th.classList.add('sorted', asc ? 'sorted-asc' : 'sorted-desc');
+      rows.sort((a, b) => {
+        let va = a.cells[colIdx]?.textContent.trim() || '';
+        let vb = b.cells[colIdx]?.textContent.trim() || '';
+        if (isNum) { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+        if (va < vb) return asc ? -1 : 1;
+        if (va > vb) return asc ? 1 : -1;
+        return 0;
+      });
+      rows.forEach(r => tbody.appendChild(r));
+    });
+  });
+});
+
+// Row drill-down
+document.querySelectorAll('tr.clickable-row').forEach(row => {
+  row.addEventListener('click', () => {
+    const panel = row.nextElementSibling;
+    if (panel && panel.classList.contains('detail-row')) {
+      panel.style.display = panel.style.display === 'none' ? 'table-row' : 'none';
+    }
+  });
+});
+
+// Filter bar for attack tables
+document.querySelectorAll('.filter-bar').forEach(bar => {
+  const table = bar.nextElementSibling;
+  if (!table || table.tagName !== 'TABLE') return;
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
+
+  const filterInput = bar.querySelector('input[data-filter]');
+  const filterSelect = bar.querySelector('select[data-filter]');
+
+  function applyFilters() {
+    const text = (filterInput?.value || '').toLowerCase();
+    const category = filterSelect?.value || '';
+    tbody.querySelectorAll('tr:not(.detail-row)').forEach(row => {
+      const rowText = row.textContent.toLowerCase();
+      const matchText = !text || rowText.includes(text);
+      const matchCat = !category || rowText.includes(category.toLowerCase());
+      row.style.display = (matchText && matchCat) ? '' : 'none';
+      const detail = row.nextElementSibling;
+      if (detail?.classList.contains('detail-row')) {
+        detail.style.display = 'none';
+      }
+    });
+  }
+  if (filterInput) filterInput.addEventListener('input', applyFilters);
+  if (filterSelect) filterSelect.addEventListener('change', applyFilters);
+});
+
+// Tab switching
+document.querySelectorAll('.tab-bar button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tabGroup = btn.closest('.tab-group');
+    tabGroup.querySelectorAll('.tab-bar button').forEach(b => b.classList.remove('active'));
+    tabGroup.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    const target = tabGroup.querySelector('#' + btn.dataset.tab);
+    if (target) target.classList.add('active');
+  });
+});
+</script>
 """
 
 
@@ -137,16 +266,51 @@ class DashboardGenerator:
             status = "PASS" if ok else "FAIL"
             dur = f'{p.get("duration", 0):.2f}s'
             detail = _esc(str(p.get("summary", "")))
+            n_attacks = len(p.get("results", []))
             rows.append(
-                f'<tr><td>{name}</td><td class="{cls}">{status}</td>'
-                f'<td>{dur}</td><td>{detail}</td></tr>'
+                f'<tr class="clickable-row"><td>{name}</td><td class="{cls}">{status}</td>'
+                f'<td>{dur}</td><td>{n_attacks} attacks</td><td>{detail}</td></tr>'
             )
+            # Drill-down row (hidden by default)
+            if p.get("results"):
+                detail_html = DashboardGenerator._phase_detail_panel(p)
+                rows.append(
+                    f'<tr class="detail-row" style="display:none">'
+                    f'<td colspan="5">{detail_html}</td></tr>'
+                )
         return (
-            '<h2>Evaluation Phases</h2>'
-            '<table><thead><tr><th>Phase</th><th>Status</th><th>Duration</th>'
+            '<h2 class="collapsible">Evaluation Phases</h2>'
+            '<div class="collapsible-content">'
+            '<table data-sortable><thead><tr>'
+            '<th data-sort="text">Phase <span class="sort-arrow">&#9650;</span></th>'
+            '<th data-sort="text">Status <span class="sort-arrow">&#9650;</span></th>'
+            '<th data-sort="number">Duration <span class="sort-arrow">&#9650;</span></th>'
+            '<th data-sort="number">Attacks <span class="sort-arrow">&#9650;</span></th>'
             '<th>Details</th></tr></thead><tbody>'
             + "\n".join(rows)
-            + '</tbody></table>'
+            + '</tbody></table></div>'
+        )
+
+    @staticmethod
+    def _phase_detail_panel(phase: Dict[str, Any]) -> str:
+        """Render inline detail panel for a phase drill-down."""
+        results = phase.get("results", [])
+        if not results:
+            return ""
+        rows: List[str] = []
+        for r in results:
+            atk = _esc(r.get("attack", r.get("defence", "—")))
+            sr = r.get("success_rate")
+            sr_str = f"{sr:.2%}" if sr is not None else "—"
+            bar = _bar_svg(sr, 1.0, color="#ef4444") if sr is not None else ""
+            dur = r.get("duration")
+            dur_str = f"{dur:.2f}s" if dur is not None else "—"
+            rows.append(f'<tr><td>{atk}</td><td>{sr_str} {bar}</td><td>{dur_str}</td></tr>')
+        return (
+            '<div class="detail-panel visible">'
+            '<table><thead><tr><th>Attack</th><th>Success Rate</th><th>Duration</th></tr></thead><tbody>'
+            + "\n".join(rows)
+            + '</tbody></table></div>'
         )
 
     @staticmethod
@@ -183,12 +347,51 @@ class DashboardGenerator:
 
     @staticmethod
     def _attack_details(phases: List[Dict[str, Any]]) -> str:
+        # Collect all attack results for the bar chart
+        all_attacks: List[Dict[str, Any]] = []
+        categories: set = set()
         sections: List[str] = []
+
         for phase in phases:
+            results = phase.get("results", [])
+            for r in results:
+                r["_phase"] = phase.get("name", "unknown")
+                all_attacks.append(r)
+                categories.add(phase.get("name", "unknown"))
+
+        # Bar chart of success rates
+        if all_attacks:
+            sections.append(DashboardGenerator._success_rate_chart(all_attacks))
+
+        # Tabbed view per phase
+        if len(categories) > 1:
+            sections.append('<div class="tab-group"><div class="tab-bar">')
+            for i, phase in enumerate(phases):
+                results = phase.get("results", [])
+                if not results:
+                    continue
+                pname = _esc(phase.get("name", "Unknown"))
+                active = " active" if i == 0 else ""
+                sections.append(
+                    f'<button class="{active}" data-tab="tab-{pname}">{pname}</button>'
+                )
+            sections.append('</div>')
+
+        for i, phase in enumerate(phases):
             results = phase.get("results", [])
             if not results:
                 continue
             phase_name = _esc(phase.get("name", "Unknown"))
+            active = " active" if i == 0 else ""
+
+            # Filter bar
+            filter_bar = (
+                f'<div class="filter-bar">'
+                f'<label>Search</label>'
+                f'<input type="text" data-filter="text" placeholder="Filter attacks...">'
+                f'</div>'
+            )
+
             rows: List[str] = []
             for r in results:
                 atk = _esc(r.get("attack", r.get("defence", "—")))
@@ -200,18 +403,74 @@ class DashboardGenerator:
                 dur = r.get("duration")
                 dur_str = f"{dur:.2f}s" if dur is not None else "—"
                 rows.append(
-                    f'<tr><td>{atk}</td><td>{status}</td>'
+                    f'<tr class="clickable-row"><td>{atk}</td><td>{status}</td>'
                     f'<td>{sr_str} {bar}</td><td>{dur_str}</td>'
                     f'<td style="color:#94a3b8;font-size:.8rem">{err}</td></tr>'
                 )
-            sections.append(
-                f'<h2>{phase_name} — Details</h2>'
-                '<table><thead><tr><th>Attack/Defence</th><th>Status</th>'
-                '<th>Success Rate</th><th>Duration</th><th>Error</th></tr></thead><tbody>'
+                # Detail row for drill-down
+                if sr is not None:
+                    detail = (
+                        f'<div class="detail-panel visible">'
+                        f'<strong>{atk}</strong><br>'
+                        f'Success Rate: {sr_str}<br>'
+                        f'Duration: {dur_str}<br>'
+                        f'Phase: {phase_name}<br>'
+                    )
+                    if err:
+                        detail += f'Error: {err}<br>'
+                    detail += '</div>'
+                    rows.append(
+                        f'<tr class="detail-row" style="display:none"><td colspan="5">{detail}</td></tr>'
+                    )
+
+            tab_content = (
+                f'<div id="tab-{phase_name}" class="tab-content{active}">'
+                f'<h2 class="collapsible">{phase_name} — Details ({len(results)} attacks)</h2>'
+                f'<div class="collapsible-content">'
+                f'{filter_bar}'
+                f'<table data-sortable><thead><tr>'
+                f'<th data-sort="text">Attack <span class="sort-arrow">&#9650;</span></th>'
+                f'<th data-sort="text">Status <span class="sort-arrow">&#9650;</span></th>'
+                f'<th data-sort="number">Success Rate <span class="sort-arrow">&#9650;</span></th>'
+                f'<th data-sort="number">Duration <span class="sort-arrow">&#9650;</span></th>'
+                f'<th>Error</th></tr></thead><tbody>'
                 + "\n".join(rows)
-                + '</tbody></table>'
+                + '</tbody></table></div></div>'
             )
+            sections.append(tab_content)
+
+        if len(categories) > 1:
+            sections.append('</div>')  # close tab-group
+
         return "\n".join(sections)
+
+    @staticmethod
+    def _success_rate_chart(attacks: List[Dict[str, Any]]) -> str:
+        """Render an inline bar chart of attack success rates."""
+        bars: List[str] = []
+        for r in attacks:
+            sr = r.get("success_rate")
+            if sr is None:
+                continue
+            name = r.get("attack", r.get("defence", "?"))[:12]
+            height = max(4, int(sr * 160))
+            color = "#16a34a" if sr < 0.05 else "#ca8a04" if sr < 0.15 else "#dc2626"
+            bars.append(
+                f'<div class="bar" style="height:{height}px;background:{color}" '
+                f'title="{_esc(r.get("attack",""))}: {sr:.2%}">'
+                f'<span class="bar-value">{sr:.0%}</span>'
+                f'<span class="bar-label">{_esc(name)}</span>'
+                f'</div>'
+            )
+        if not bars:
+            return ""
+        return (
+            '<div class="chart-container">'
+            '<h2>Attack Success Rates</h2>'
+            '<div class="bar-chart">'
+            + "".join(bars)
+            + '</div></div>'
+        )
 
     @staticmethod
     def _wrap_html(body: str) -> str:
@@ -223,5 +482,6 @@ class DashboardGenerator:
             f'<style>{_CSS}</style>\n'
             '</head>\n<body>\n'
             f'<div class="container">\n{body}\n</div>\n'
+            f'{_JS}\n'
             '</body>\n</html>'
         )
