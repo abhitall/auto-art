@@ -38,7 +38,8 @@ COPY README.md ./
 COPY auto_art ./auto_art
 
 # Install the project itself (non-editable so .pth points to site-packages)
-RUN uv sync --frozen --no-dev --no-editable
+RUN uv sync --frozen --no-dev --no-editable && \
+    uv pip install gunicorn>=22.0.0
 
 # ============================================================
 # Stage 2: Runtime
@@ -86,5 +87,11 @@ EXPOSE 5000
 # Switch to non-root user
 USER autoart
 
-# Run with gunicorn for production (falls back to flask dev server)
-CMD ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=5000"]
+# Run with gunicorn for production
+CMD ["gunicorn", \
+     "--bind", "0.0.0.0:5000", \
+     "--workers", "4", \
+     "--timeout", "120", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "auto_art.api.app:app"]

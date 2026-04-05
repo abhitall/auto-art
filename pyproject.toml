@@ -67,6 +67,7 @@ security = [
 api = [
     "redis>=5.0.0,<6.0.0",
     "pyjwt>=2.8.0,<3.0.0",
+    "gunicorn>=22.0.0,<24.0.0",
 ]
 testing = [
     "hypothesis>=6.100.0,<7.0.0",
