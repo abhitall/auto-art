@@ -1,0 +1,104 @@
+# Docker Compose for Auto-ART full stack deployment
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose up api         # Start API only
+#   docker compose logs -f api    # Follow API logs
+#   docker compose down           # Stop all services
+
+services:
+  # ---------------------------------------------------------------
+  # Auto-ART API (gunicorn + Flask)
+  # ---------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: auto-art:latest
+    container_name: auto-art-api
+    ports:
+      - "${AUTO_ART_PORT:-5000}:5000"
+    environment:
+      - AUTO_ART_AUTH_MODE=${AUTO_ART_AUTH_MODE:-required}
+      - AUTO_ART_AUDIT_DIR=/app/audit
+      - AUTO_ART_REDIS_URL=redis://redis:6379/0
+      - GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}
+    volumes:
+      - auto-art-data:/app/data
+      - auto-art-audit:/app/audit
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=256M
+    security_opt:
+      - no-new-privileges:true
+
+  # ---------------------------------------------------------------
+  # Redis (rate limiting, caching)
+  # ---------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: auto-art-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+
+  # ---------------------------------------------------------------
+  # Prometheus (optional monitoring)
+  # ---------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: auto-art-prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------
+  # Grafana (optional dashboards)
+  # ---------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: auto-art-grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-autoart}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
+volumes:
+  auto-art-data:
+  auto-art-audit:
+  redis-data:
+  prometheus-data:
+  grafana-data:

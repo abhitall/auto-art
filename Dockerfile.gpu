@@ -1,0 +1,55 @@
+# GPU-enabled Dockerfile for Auto-ART
+# Uses NVIDIA CUDA base for GPU-accelerated attacks (GCG, alpha-CROWN, etc.)
+#
+# Requires: NVIDIA Container Toolkit on host
+# Usage: docker build -f Dockerfile.gpu -t auto-art:gpu .
+#        docker run --gpus all auto-art:gpu
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python 3.11
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3.11 python3.11-venv python3-pip && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python
+
+# Security: non-root user
+RUN groupadd --gid 1001 autoart && \
+    useradd --uid 1001 --gid autoart --shell /bin/bash --create-home autoart
+
+WORKDIR /app
+
+# Install UV
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Copy and install dependencies
+COPY pyproject.toml uv.lock* ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+COPY auto_art ./auto_art
+RUN uv sync --frozen --no-dev
+
+ENV PATH="/app/.venv/bin:$PATH"
+ENV VIRTUAL_ENV="/app/.venv"
+
+RUN mkdir -p /app/data /app/audit /tmp/auto_art && \
+    chown -R autoart:autoart /app /tmp/auto_art
+
+ENV FLASK_APP=auto_art.api.app:app
+ENV AUTO_ART_AUDIT_DIR=/app/audit
+ENV AUTO_ART_AUTH_MODE=required
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')" || exit 1
+
+EXPOSE 5000
+
+USER autoart
+
+CMD ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=5000"]

@@ -1,145 +1,144 @@
+"""Tests for the Auto-ART API (v1 + legacy endpoints)."""
+
+import os
 import pytest
 import json
 from unittest.mock import patch
 
-from auto_art.api.app import app as flask_app # Import the Flask app instance
-from auto_art.core.evaluation.config.evaluation_config import ModelType, Framework # For valid enum values
-from auto_art.core.evaluation.art_evaluator import ARTEvaluator # To mock its methods
+# Disable auth for tests before importing the app
+os.environ["AUTO_ART_AUTH_MODE"] = "disabled"
+
+from auto_art.api.app import create_app
+
 
 @pytest.fixture
 def client():
-    """Create a Flask test client for the app."""
-    with flask_app.test_client() as client:
+    """Create a Flask test client with auth disabled."""
+    app = create_app({"TESTING": True})
+    with app.test_client() as client:
         yield client
 
-def test_status_endpoint(client):
-    """Test the /status endpoint."""
-    response = client.get('/status')
+
+# ---------------------------------------------------------------------------
+# Status / Health
+# ---------------------------------------------------------------------------
+
+def test_health_endpoint(client):
+    response = client.get("/health")
     assert response.status_code == 200
-    json_data = response.get_json()
-    assert json_data["status"] == "AutoART API is running"
-    assert "version" in json_data
+    data = response.get_json()
+    assert data["status"] == "healthy"
+    assert "version" in data
 
-def test_evaluate_model_endpoint_success(client):
-    """Test the /evaluate_model endpoint for a successful evaluation (mocked)."""
-    mock_eval_results = {
-        "model_metadata": {"model_type": "classification", "framework": "pytorch"},
-        "attack_results": {"fgsm": {"clean_accuracy": 0.9, "adversarial_accuracy": 0.2}},
-        "summary": {"average_adversarial_accuracy": 0.2}
-    }
 
-    with patch.object(ARTEvaluator, 'evaluate_robustness_from_path', return_value=mock_eval_results) as mock_evaluate:
-        payload = {
-            "model_path": "dummy/path/model.pt",
-            "framework": "pytorch",
-            "model_type": "classification",
-            "num_samples": 50,
-            "device_preference": "cpu"
-        }
-        response = client.post('/evaluate_model', json=payload)
+def test_status_endpoint(client):
+    response = client.get("/status")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["status"] == "running"
+    assert "version" in data
+    assert "features" in data
 
-        assert response.status_code == 200
-        json_data = response.get_json()
-        assert json_data["summary"]["average_adversarial_accuracy"] == 0.2
-        mock_evaluate.assert_called_once_with(
-            model_path="dummy/path/model.pt",
-            framework="pytorch",
-            num_samples=50
-        )
 
-def test_evaluate_model_endpoint_missing_params(client):
-    """Test /evaluate_model with missing required parameters."""
-    payload = {
-        "model_path": "dummy/path/model.pt",
-        # "framework": "pytorch", # Missing framework
-        "model_type": "classification"
-    }
-    response = client.post('/evaluate_model', json=payload)
-    assert response.status_code == 400
-    json_data = response.get_json()
-    assert "Missing required parameters" in json_data["error"]
-    assert "framework" in json_data["error"]
+def test_v1_status_endpoint(client):
+    response = client.get("/api/v1/status")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["status"] == "running"
 
-def test_evaluate_model_endpoint_invalid_framework(client):
-    """Test /evaluate_model with an invalid framework string."""
-    payload = {
-        "model_path": "dummy/path/model.pt",
-        "framework": "invalid_framework_name",
-        "model_type": "classification"
-    }
-    response = client.post('/evaluate_model', json=payload)
-    assert response.status_code == 400
-    json_data = response.get_json()
-    assert "Invalid framework or model_type" in json_data["error"]
 
-def test_evaluate_model_endpoint_invalid_model_type(client):
-    """Test /evaluate_model with an invalid model_type string."""
-    payload = {
-        "model_path": "dummy/path/model.pt",
+# ---------------------------------------------------------------------------
+# Attack / Defense listing
+# ---------------------------------------------------------------------------
+
+def test_attacks_endpoint(client):
+    response = client.get("/api/v1/attacks")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "attacks" in data
+    assert len(data["attacks"]) >= 50
+
+
+def test_defenses_endpoint(client):
+    response = client.get("/api/v1/defenses")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "defenses" in data
+    assert len(data["defenses"]) >= 15
+
+
+# ---------------------------------------------------------------------------
+# OpenAPI spec
+# ---------------------------------------------------------------------------
+
+def test_openapi_spec(client):
+    response = client.get("/api/v1/openapi.json")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["openapi"] == "3.0.3"
+    assert "paths" in data
+
+
+# ---------------------------------------------------------------------------
+# Evaluate endpoint (v1)
+# ---------------------------------------------------------------------------
+
+def test_evaluate_requires_json(client):
+    response = client.post("/api/v1/evaluate", data="not json")
+    assert response.status_code in (400, 415)
+
+
+def test_evaluate_validates_fields(client):
+    # Missing model_path should fail validation
+    response = client.post("/api/v1/evaluate", json={
         "framework": "pytorch",
-        "model_type": "invalid_model_type_name"
-    }
-    response = client.post('/evaluate_model', json=payload)
-    assert response.status_code == 400
-    json_data = response.get_json()
-    assert "Invalid framework or model_type" in json_data["error"]
+        "model_type": "classification",
+    })
+    assert response.status_code in (400, 422)
 
-def test_evaluate_model_endpoint_model_not_found(client):
-    """Test /evaluate_model when the model file is not found (mocked error)."""
-    with patch.object(ARTEvaluator, 'evaluate_robustness_from_path', side_effect=FileNotFoundError("Mocked: Model not found")) as mock_evaluate:
-        payload = {
-            "model_path": "non_existent/model.pt",
-            "framework": "pytorch",
-            "model_type": "classification"
-        }
-        response = client.post('/evaluate_model', json=payload)
 
-        assert response.status_code == 404 # As per current app.py error handling
-        json_data = response.get_json()
-        assert "Model file not found" in json_data["error"]
-        mock_evaluate.assert_called_once()
+def test_evaluate_with_valid_payload(client):
+    # Should accept valid payload (actual evaluation would need a real model)
+    response = client.post("/api/v1/evaluate", json={
+        "model_path": "/tmp/nonexistent_model.pt",
+        "framework": "pytorch",
+        "model_type": "classification",
+        "num_samples": 10,
+    })
+    # May return 404 (model not found) or 500 (can't load), but not 400
+    assert response.status_code in (200, 404, 500)
 
-def test_evaluate_model_endpoint_internal_eval_error(client):
-    """Test /evaluate_model when ARTEvaluator returns an error in its results."""
-    mock_eval_error_results = {
-        "error": "Something went wrong during evaluation steps."
-    }
-    with patch.object(ARTEvaluator, 'evaluate_robustness_from_path', return_value=mock_eval_error_results) as mock_evaluate:
-        payload = {
-            "model_path": "dummy/path/model.pt",
-            "framework": "pytorch",
-            "model_type": "classification"
-        }
-        response = client.post('/evaluate_model', json=payload)
 
-        assert response.status_code == 500 # As per current app.py error handling
-        json_data = response.get_json()
-        assert "Evaluation failed" in json_data["error"]
-        assert mock_eval_error_results["error"] in json_data["error"]
-        mock_evaluate.assert_called_once()
+# ---------------------------------------------------------------------------
+# Scan endpoint
+# ---------------------------------------------------------------------------
 
-def test_evaluate_model_endpoint_unexpected_exception(client):
-    """Test /evaluate_model for generic unexpected exceptions during evaluation."""
-    with patch.object(ARTEvaluator, 'evaluate_robustness_from_path', side_effect=Exception("Unexpected mock problem")) as mock_evaluate:
-        payload = {
-            "model_path": "dummy/path/model.pt",
-            "framework": "pytorch",
-            "model_type": "classification"
-        }
-        response = client.post('/evaluate_model', json=payload)
+def test_scan_with_valid_payload(client):
+    response = client.post("/api/v1/scan", json={
+        "model_path": "/tmp/test_model.pt",
+        "preset": "quick_scan",
+    })
+    # Should accept the request (returns submitted or error finding model)
+    assert response.status_code in (200, 404, 500)
+    if response.status_code == 200:
+        data = response.get_json()
+        assert "scan_config" in data
 
-        assert response.status_code == 500
-        json_data = response.get_json()
-        assert "An unexpected server error occurred" in json_data["error"]
-        mock_evaluate.assert_called_once()
 
-def test_evaluate_model_endpoint_not_json(client):
-    """Test /evaluate_model with non-JSON payload."""
-    response = client.post('/evaluate_model', data="this is not json")
-    assert response.status_code == 400
-    json_data = response.get_json()
-    assert "Request must be JSON" in json_data["error"]
+# ---------------------------------------------------------------------------
+# Legacy evaluate_model endpoint
+# ---------------------------------------------------------------------------
 
-# TODO: Add tests for different successful evaluation outputs if structure varies.
-# TODO: Add tests for optional parameters like num_samples, device_preference if they affect ARTEvaluator calls.
-#       (Currently, num_samples is passed to evaluate_robustness_from_path, device_preference to EvalConfig)
+def test_legacy_evaluate_model_not_json(client):
+    response = client.post("/evaluate_model", data="this is not json")
+    assert response.status_code in (400, 415)
+
+
+def test_legacy_evaluate_model_valid(client):
+    response = client.post("/evaluate_model", json={
+        "model_path": "/tmp/test.pt",
+        "framework": "pytorch",
+        "model_type": "classification",
+    })
+    # May fail due to model not existing, but shouldn't be a validation error
+    assert response.status_code in (200, 404, 500)

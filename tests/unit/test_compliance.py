@@ -82,5 +82,5 @@ class TestComplianceEngine:
         )
         assert isinstance(report, ComplianceReport)
         assert report.overall_score > 0
-        assert len(report.frameworks_assessed) == 3
+        assert len(report.frameworks_assessed) == 7
         assert "NIST AI RMF" in report.summary
