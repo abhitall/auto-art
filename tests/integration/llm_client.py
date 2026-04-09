@@ -2,7 +2,7 @@
 
 Supports configurable endpoints via environment variables:
     LLM_API_BASE  - API base URL (default: http://192.168.50.101:1234/v1)
-    LLM_API_KEY   - Bearer token (default: sk-lm-nY9ulOwF:yxVQDyNnSQZUKXpNBhL3)
+    LLM_API_KEY   - Bearer token (required, no default)
     LLM_MODEL     - Model ID (default: qwen/qwen3.5-9b)
 """
 
@@ -18,7 +18,7 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE = os.environ.get("LLM_API_BASE", "http://192.168.50.101:1234/v1")
-DEFAULT_KEY = os.environ.get("LLM_API_KEY", "sk-lm-nY9ulOwF:yxVQDyNnSQZUKXpNBhL3")
+DEFAULT_KEY = os.environ.get("LLM_API_KEY", "")
 DEFAULT_MODEL = os.environ.get("LLM_MODEL", "qwen/qwen3.5-9b")
 EMBEDDING_MODEL = os.environ.get(
     "LLM_EMBEDDING_MODEL", "text-embedding-bge-m3"

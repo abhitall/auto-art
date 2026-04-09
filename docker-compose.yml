@@ -18,7 +18,7 @@ services:
     ports:
       - "${AUTO_ART_PORT:-5000}:5000"
     environment:
-      - AUTO_ART_AUTH_MODE=${AUTO_ART_AUTH_MODE:-disabled}
+      - AUTO_ART_AUTH_MODE=${AUTO_ART_AUTH_MODE:-required}
       - AUTO_ART_AUDIT_DIR=/app/audit
       - AUTO_ART_REDIS_URL=redis://redis:6379/0
       - GUNICORN_WORKERS=${GUNICORN_WORKERS:-4}

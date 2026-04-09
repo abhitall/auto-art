@@ -196,8 +196,10 @@ class CostTracker:
             return "openai"
         if "claude" in model_lower:
             return "anthropic"
-        if "llama" in model_lower or "mistral" in model_lower:
+        if "llama" in model_lower:
             return "meta"
+        if "mistral" in model_lower or "mixtral" in model_lower:
+            return "mistral"
         if "gemini" in model_lower:
             return "google"
         return "unknown"

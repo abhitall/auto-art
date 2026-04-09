@@ -194,19 +194,26 @@ document.querySelectorAll('.tab-bar button').forEach(btn => {
 class DashboardGenerator:
     """Generates a standalone HTML report from an OrchestratorReport."""
 
+    @staticmethod
+    def _get_field(report: Any, key: str, default: Any) -> Any:
+        """Extract a field from a report object or dict."""
+        if isinstance(report, dict):
+            return report.get(key, default)
+        return getattr(report, key, default)
+
     def generate(self, report: Any) -> str:
         """Build and return a complete HTML string.
 
         Args:
-            report: An OrchestratorReport (or any object with the same fields:
+            report: An OrchestratorReport (or any object/dict with the same fields:
                     timestamp, execution_time, passed, phases, gate_results, summary).
         """
-        ts = getattr(report, "timestamp", 0.0)
-        exec_time = getattr(report, "execution_time", 0.0)
-        passed = getattr(report, "passed", True)
-        phases: List[Dict[str, Any]] = getattr(report, "phases", [])
-        gate_results: Dict[str, Any] = getattr(report, "gate_results", {})
-        summary: Dict[str, Any] = getattr(report, "summary", {})
+        ts = self._get_field(report, "timestamp", 0.0)
+        exec_time = self._get_field(report, "execution_time", 0.0)
+        passed = self._get_field(report, "passed", True)
+        phases: List[Dict[str, Any]] = self._get_field(report, "phases", [])
+        gate_results: Dict[str, Any] = self._get_field(report, "gate_results", {})
+        summary: Dict[str, Any] = self._get_field(report, "summary", {})
 
         ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "N/A"
 

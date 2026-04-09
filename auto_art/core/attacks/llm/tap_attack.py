@@ -116,7 +116,7 @@ class TAPAttack:
         """Run TAP attack with tree search and pruning."""
         start_time = time.time()
         nodes: Dict[str, TAPNode] = {}
-        total_queries = 0
+        target_queries = 0
         nodes_pruned = 0
         best_score = 0
         best_prompt = ""
@@ -133,7 +133,7 @@ class TAPAttack:
 
             try:
                 response = self.target_fn(seed_prompt)
-                total_queries += 1
+                target_queries += 1
             except Exception as e:
                 logger.warning(f"TAP seed query failed: {e}")
                 response = f"Error: {e}"
@@ -157,7 +157,7 @@ class TAPAttack:
             if score >= self.success_threshold:
                 return self._build_result(
                     True, best_prompt, best_response, best_score,
-                    nodes, 0, total_queries, nodes_pruned,
+                    nodes, 0, target_queries, nodes_pruned,
                     time.time() - start_time,
                 )
 
@@ -169,19 +169,19 @@ class TAPAttack:
 
         # Tree expansion with BFS
         for depth in range(1, self.max_depth):
-            if not frontier or total_queries >= self.max_total_queries:
+            if not frontier or target_queries >= self.max_total_queries:
                 break
 
             next_frontier: List[str] = []
 
             for parent_id in frontier:
-                if total_queries >= self.max_total_queries:
+                if target_queries >= self.max_total_queries:
                     break
 
                 parent = nodes[parent_id]
 
                 for _ in range(self.branching_factor):
-                    if total_queries >= self.max_total_queries:
+                    if target_queries >= self.max_total_queries:
                         break
 
                     node_id = f"tap_{node_counter:04d}"
@@ -190,11 +190,10 @@ class TAPAttack:
                     child_prompt = self._generate_child(
                         goal, parent.prompt, parent.score, parent.response
                     )
-                    total_queries += 1  # attacker query
 
                     try:
                         response = self.target_fn(child_prompt)
-                        total_queries += 1
+                        target_queries += 1
                     except Exception as e:
                         response = f"Error: {e}"
 
@@ -219,7 +218,7 @@ class TAPAttack:
                     if score >= self.success_threshold:
                         return self._build_result(
                             True, best_prompt, best_response, best_score,
-                            nodes, depth, total_queries, nodes_pruned,
+                            nodes, depth, target_queries, nodes_pruned,
                             time.time() - start_time,
                         )
 
@@ -240,7 +239,7 @@ class TAPAttack:
         return self._build_result(
             best_score >= self.success_threshold,
             best_prompt, best_response, best_score,
-            nodes, max_depth_reached, total_queries, nodes_pruned,
+            nodes, max_depth_reached, target_queries, nodes_pruned,
             time.time() - start_time,
         )
 

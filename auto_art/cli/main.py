@@ -252,9 +252,10 @@ def report(
         from auto_art.core.compliance import ComplianceEngine
 
         if compliance:
+            import dataclasses
             engine = ComplianceEngine()
             compliance_results = engine.assess(results, frameworks=list(compliance))
-            results["compliance"] = compliance_results
+            results["compliance"] = dataclasses.asdict(compliance_results)
 
         if output_format == "html":
             generator = DashboardGenerator()
@@ -264,7 +265,7 @@ def report(
             click.echo(f"HTML report saved to: {out_path}")
         elif output_format == "pdf":
             click.echo("Generating PDF compliance report...")
-            from auto_art.core.report_generator import PDFReportGenerator
+            from auto_art.core.model_card import PDFReportGenerator
             generator = PDFReportGenerator()
             out_path = output or "report.pdf"
             generator.generate(results, out_path)

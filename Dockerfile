@@ -39,7 +39,7 @@ COPY auto_art ./auto_art
 
 # Install the project itself (non-editable so .pth points to site-packages)
 RUN uv sync --frozen --no-dev --no-editable && \
-    uv pip install gunicorn>=22.0.0
+    uv pip install "gunicorn>=22.0.0"
 
 # ============================================================
 # Stage 2: Runtime
@@ -75,7 +75,7 @@ RUN mkdir -p /app/data /app/audit /tmp/auto_art && \
 # Flask configuration
 ENV FLASK_APP=auto_art.api.app:app
 ENV AUTO_ART_AUDIT_DIR=/app/audit
-ENV AUTO_ART_AUTH_MODE=disabled
+ENV AUTO_ART_AUTH_MODE=required
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

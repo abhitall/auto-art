@@ -104,15 +104,17 @@ class IndirectPromptInjectionAttack:
         """Run indirect prompt injection attack across multiple channels."""
         start_time = time.time()
         successes = 0
+        attempts = 0
         vulnerabilities: List[Dict[str, Any]] = []
 
         for channel in self.channels:
             payloads = self.INJECTION_PAYLOADS.get(channel, [])
             for payload_template in payloads:
-                if len(vulnerabilities) + successes >= num_trials:
+                if attempts >= num_trials:
                     break
 
                 payload = payload_template.format(goal=goal)
+                attempts += 1
 
                 try:
                     # Simulate tool returning poisoned content
@@ -130,7 +132,7 @@ class IndirectPromptInjectionAttack:
                 except Exception as e:
                     logger.debug(f"Injection attempt failed ({channel}): {e}")
 
-        total = max(1, len(vulnerabilities) + (num_trials - successes))
+        total = max(1, attempts)
 
         return AgenticAttackResult(
             attack_name="indirect_prompt_injection",
